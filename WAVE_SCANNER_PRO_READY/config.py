@@ -87,7 +87,19 @@ TELEGRAM_PROXY = _env_str("TELEGRAM_PROXY", "")
 
 DATA_EXCHANGE = _env_str("DATA_EXCHANGE", "bybit")
 
+# Whitelist symbols based on 60-day backtest (see PR description).
+# Majors (BTC/ETH/BNB/LINK/etc.) systematically lost on this strategy in the
+# tested window — mean_R ranged from -0.55 to -1.00. The list below keeps
+# only symbols with non-negative or modestly-negative mean_R, which gave
+# WR 46%, PF 1.16 on the same window (vs 33% WR / PF 0.58 for the full list).
+# Revisit after walk-forward validation on a second window.
+# Full pre-tuning list preserved in SYMBOLS_FULL for reference / rollback.
 SYMBOLS = [
+    "LDOUSDT", "POLUSDT", "SEIUSDT", "MANAUSDT", "TIAUSDT",
+    "OPUSDT", "RUNEUSDT", "ADAUSDT", "GALAUSDT", "STXUSDT",
+]
+
+SYMBOLS_FULL = [
     "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
     "DOGEUSDT", "AVAXUSDT", "LINKUSDT", "DOTUSDT", "ADAUSDT",
     "LTCUSDT", "ATOMUSDT", "NEARUSDT", "APTUSDT", "ARBUSDT",
@@ -97,8 +109,8 @@ SYMBOLS = [
 ]
 
 SYMBOLS_EXTENDED = [
-    "WLDUSDT", "SEIUSDT", "STXUSDT", "RUNEUSDT", "JUPUSDT",
-    "WIFUSDT", "PENDLEUSDT", "EIGENUSDT", "ENAUSDT",
+    "WLDUSDT", "JUPUSDT", "WIFUSDT", "PENDLEUSDT",
+    "EIGENUSDT", "ENAUSDT",
 ]
 
 TF_ENTRY = _env_str("TF_ENTRY", "15m")
@@ -125,7 +137,9 @@ SCAN_INTERVAL_SEC = _env_int("SCAN_INTERVAL_SEC", 90)
 SCAN_WORKERS = _env_int("SCAN_WORKERS", 2)
 EXTENDED_SYMBOLS_LIMIT = _env_int("EXTENDED_SYMBOLS_LIMIT", 5)
 SIGNAL_COOLDOWN_SEC = _env_int("SIGNAL_COOLDOWN_SEC", 3600)
-MIN_SCORE = _env_float("MIN_SCORE", 66.0)
+# MIN_SCORE raised from 66 to 78 — at 78 the backtest keeps only the trades
+# whose score band (>=78) had the highest PF on the tested window.
+MIN_SCORE = _env_float("MIN_SCORE", 78.0)
 
 RANGING_ATR_RATIO = _env_float("RANGING_ATR_RATIO", 0.007)
 RANGING_BB_WIDTH_MIN = _env_float("RANGING_BB_WIDTH_MIN", 0.012)
@@ -156,7 +170,9 @@ BRAKING_ABSORPTION = _env_float("BRAKING_ABSORPTION", 0.30)
 
 IMPULSE_MIN_ATR = _env_float("IMPULSE_MIN_ATR", 0.8)
 IMPULSE_EQUALITY_TOL = _env_float("IMPULSE_EQUALITY_TOL", 0.35)
-IMPULSE_MAX_AGE_BARS = _env_int("IMPULSE_MAX_AGE_BARS", 16)
+# Fresher impulse requirement (was 16). 6 bars keeps entries within ~30 min
+# of the LTF impulse end on 5m TF, avoiding stale setups.
+IMPULSE_MAX_AGE_BARS = _env_int("IMPULSE_MAX_AGE_BARS", 6)
 IMPULSE_MIN_BARS = _env_int("IMPULSE_MIN_BARS", 2)
 IMPULSE_MAX_BARS = _env_int("IMPULSE_MAX_BARS", 4)
 IMPULSE_PULLBACK_MAX = _env_float("IMPULSE_PULLBACK_MAX", 0.45)
@@ -190,10 +206,18 @@ MAX_DAILY_LOSS_PCT = _env_float("MAX_DAILY_LOSS_PCT", 5.0)
 MAX_DRAWDOWN_PCT = _env_float("MAX_DRAWDOWN_PCT", 15.0)
 LEVERAGE = _env_int("LEVERAGE", 5)
 
-BEST_SESSIONS = ["london", "london_newyork_overlap", "newyork"]
-SKIP_SESSIONS = ["asia", "rollover"]
+# Session lists re-derived from backtest mean_R per session:
+#   london_newyork_overlap: -0.25R  (best liquid session)
+#   newyork:                -0.24R
+#   rollover:               +0.43R  (small n=5, kept as neutral)
+#   london:                 -0.42R  (moved to SKIP)
+#   asia:                   -0.55R  (kept in SKIP)
+BEST_SESSIONS = ["london_newyork_overlap", "newyork", "rollover"]
+SKIP_SESSIONS = ["asia", "london"]
 
-VOLUME_CONFIRMATION_REQUIRED = _env_int("VOLUME_CONFIRMATION_REQUIRED", 0) == 1
+# Volume confirmation now required — adds cheap filter against low-liquidity
+# chop entries. Default flipped from 0 to 1.
+VOLUME_CONFIRMATION_REQUIRED = _env_int("VOLUME_CONFIRMATION_REQUIRED", 1) == 1
 BTC_FILTER_ENABLED = _env_int("BTC_FILTER_ENABLED", 1) == 1
 BTC_FILTER_DROP_PCT = _env_float("BTC_FILTER_DROP_PCT", 1.2)
 BTC_FILTER_LOOKBACK_BARS = _env_int("BTC_FILTER_LOOKBACK_BARS", 3)
