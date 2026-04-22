@@ -1,0 +1,5 @@
+pandas>=2.2
+numpy>=1.26
+ccxt>=4.4
+requests>=2.31
+PySocks>=1.7

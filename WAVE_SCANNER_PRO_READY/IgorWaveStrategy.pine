@@ -1,0 +1,437 @@
+// ============================================================
+// IGOR WAVE STRATEGY — Pine Script v5
+// Полная реализация волновой стратегии Игоря
+//
+// Шаг 0: Фильтр боковика (ATR + BB)
+// Шаг 1: Структура импульс + ABC коррекция
+// Шаг 2: Завершение коррекции (Фибо 50/61.8% + ликвидность + A=C + объём)
+// Шаг 3: Первый импульс на 5m
+// Шаг 4: Вход 50-61.8%, стоп, отмена
+// Шаг 5: Цели TP1/TP2/TP3 + уровень шипа
+// ============================================================
+
+//@version=5
+indicator("Igor Wave Strategy", overlay=true, max_lines_count=100, max_labels_count=100)
+
+// ============================================================
+// НАСТРОЙКИ
+// ============================================================
+
+group_main    = "=== ОСНОВНЫЕ ==="
+group_filter  = "=== ФИЛЬТР БОКОВИКА ==="
+group_fib     = "=== ФИБОНАЧЧИ ==="
+group_volume  = "=== ОБЪЁМ ==="
+group_display = "=== ОТОБРАЖЕНИЕ ==="
+
+// Основные
+atr_period     = input.int(14,    "ATR период",          group=group_main)
+ema_fast       = input.int(20,    "EMA быстрая",         group=group_main)
+ema_slow       = input.int(50,    "EMA медленная",       group=group_main)
+ema_trend      = input.int(200,   "EMA тренд",           group=group_main)
+rsi_period     = input.int(14,    "RSI период",          group=group_main)
+vol_ma_period  = input.int(20,    "Volume MA период",    group=group_main)
+min_score      = input.int(60,    "Мин. скор (0-100)",   group=group_main, minval=0, maxval=100)
+
+// Фильтр боковика
+ranging_atr    = input.float(0.015, "ATR/цена порог боковика", group=group_filter, step=0.001)
+bb_period      = input.int(20,    "BB период",           group=group_filter)
+bb_mult        = input.float(2.0, "BB множитель",        group=group_filter)
+bb_squeeze_min = input.float(0.02,"BB ширина (боковик)", group=group_filter, step=0.001)
+
+// Фибоначчи
+fib_tolerance  = input.float(0.02,"Допуск зоны Фибо",   group=group_fib, step=0.005)
+show_fib_zones = input.bool(true, "Показывать зоны Фибо",group=group_fib)
+
+// Объём
+vol_spike_mult = input.float(2.0, "Объём спайк (x MA)", group=group_volume, step=0.1)
+show_braking   = input.bool(true, "Показывать тормозящий объём", group=group_volume)
+
+// Отображение
+show_signals   = input.bool(true, "Показывать сигналы", group=group_display)
+show_levels    = input.bool(true, "Показывать уровни",  group=group_display)
+show_ranging   = input.bool(true, "Показывать боковик", group=group_display)
+show_ema       = input.bool(true, "Показывать EMA",     group=group_display)
+
+// ============================================================
+// ИНДИКАТОРЫ
+// ============================================================
+
+atr_val   = ta.atr(atr_period)
+rsi_val   = ta.rsi(close, rsi_period)
+vol_ma    = ta.sma(volume, vol_ma_period)
+vol_ratio = volume / vol_ma
+
+ema20_val  = ta.ema(close, ema_fast)
+ema50_val  = ta.ema(close, ema_slow)
+ema200_val = ta.ema(close, ema_trend)
+
+bb_basis  = ta.sma(close, bb_period)
+bb_dev    = ta.stdev(close, bb_period)
+bb_upper  = bb_basis + bb_mult * bb_dev
+bb_lower  = bb_basis - bb_mult * bb_dev
+bb_width  = (bb_upper - bb_lower) / bb_basis
+
+macd_line  = ta.ema(close, 12) - ta.ema(close, 26)
+macd_sig   = ta.ema(macd_line, 9)
+macd_hist  = macd_line - macd_sig
+
+// EMA на графике
+plot(show_ema ? ema20_val  : na, "EMA 20",  color=color.new(color.blue,   0), linewidth=1)
+plot(show_ema ? ema50_val  : na, "EMA 50",  color=color.new(color.orange, 0), linewidth=1)
+plot(show_ema ? ema200_val : na, "EMA 200", color=color.new(color.red,    0), linewidth=2)
+
+// ============================================================
+// ШАГ 0: ФИЛЬТР БОКОВИКА
+// ============================================================
+
+atr_ratio     = atr_val / close
+low_vol       = atr_ratio < ranging_atr
+bb_squeeze    = bb_width < bb_squeeze_min
+flat_ema      = math.abs(ema20_val - ema20_val[20]) / close < 0.005
+
+ranging_count = (low_vol ? 1 : 0) + (bb_squeeze ? 1 : 0) + (flat_ema ? 1 : 0)
+is_ranging    = ranging_count >= 2
+
+// Фон боковика
+bgcolor(show_ranging and is_ranging ? color.new(color.gray, 90) : na, title="Боковик фон")
+
+// ============================================================
+// ШАГ 1: ТРЕНД И СТРУКТУРА
+// ============================================================
+
+// Тренд по EMA
+trend_up   = close > ema50_val and ema50_val > ema200_val
+trend_down = close < ema50_val and ema50_val < ema200_val
+trend_neutral = not trend_up and not trend_down
+
+// Пики и впадины (ZigZag упрощённый)
+pivot_high = ta.pivothigh(high, 5, 5)
+pivot_low  = ta.pivotlow(low,   5, 5)
+
+// Последние значимые пики и впадины
+var float last_high1 = na
+var float last_high2 = na
+var float last_low1  = na
+var float last_low2  = na
+var int   last_high1_bar = na
+var int   last_low1_bar  = na
+
+if not na(pivot_high)
+    last_high2 := last_high1
+    last_high1 := pivot_high
+    last_high1_bar := bar_index[5]
+
+if not na(pivot_low)
+    last_low2 := last_low1
+    last_low1 := pivot_low
+    last_low1_bar := bar_index[5]
+
+// ============================================================
+// ШАГ 2: ЗАВЕРШЕНИЕ КОРРЕКЦИИ
+// ============================================================
+
+// Фибоначчи — проверка зоны 50-61.8%
+fib_check_up(swing_low, swing_high) =>
+    impulse = swing_high - swing_low
+    retracement = (swing_high - close) / impulse
+    fib50  = math.abs(retracement - 0.500) <= fib_tolerance * 2
+    fib618 = math.abs(retracement - 0.618) <= fib_tolerance * 2
+    [fib50 or fib618, retracement, fib50 ? 0.500 : fib618 ? 0.618 : retracement]
+
+fib_check_down(swing_high, swing_low) =>
+    impulse = swing_high - swing_low
+    retracement = (close - swing_low) / impulse
+    fib50  = math.abs(retracement - 0.500) <= fib_tolerance * 2
+    fib618 = math.abs(retracement - 0.618) <= fib_tolerance * 2
+    [fib50 or fib618, retracement, fib50 ? 0.500 : fib618 ? 0.618 : retracement]
+
+// Снятие ликвидности
+liquidity_swept_up   = low  < ta.lowest(low,  10)[1]   // пробой минимума
+liquidity_swept_down = high > ta.highest(high, 10)[1]  // пробой максимума
+
+// Тормозящий объём
+braking_vol_up = (
+     vol_ratio >= vol_spike_mult and
+     (close - low) / math.max(high - low, 0.0001) >= 0.5 and  // закрытие в верхней половине
+     low[1] >= low * 0.999 and                                  // следующий бар не ниже
+     low[2] >= low * 0.999
+     )
+
+braking_vol_down = (
+     vol_ratio >= vol_spike_mult and
+     (high - close) / math.max(high - low, 0.0001) >= 0.5 and  // закрытие в нижней половине
+     high[1] <= high * 1.001 and
+     high[2] <= high * 1.001
+     )
+
+// Отображение тормозящего объёма
+plotshape(show_braking and braking_vol_up,   "Тормоз ↑", shape.triangleup,   location.belowbar, color.new(color.teal,  0), size=size.small)
+plotshape(show_braking and braking_vol_down, "Тормоз ↓", shape.triangledown, location.abovebar, color.new(color.purple,0), size=size.small)
+
+// ============================================================
+// ШАГ 3: ПЕРВЫЙ ИМПУЛЬС НА ТЕКУЩЕМ ТФ
+// ============================================================
+
+bar_range  = high - low
+body       = math.abs(close - open)
+body_ratio = body / math.max(bar_range, 0.0001)
+
+impulse_up   = close > open and body_ratio >= 0.6 and body >= atr_val * 0.8
+impulse_down = close < open and body_ratio >= 0.6 and body >= atr_val * 0.8
+
+// ============================================================
+// СКОРИНГ И ГЕНЕРАЦИЯ СИГНАЛОВ
+// ============================================================
+
+// LONG сигнал
+score_long = 0
+score_long := trend_up or trend_neutral ? score_long + 15 : score_long
+
+// Фибо для лонга
+var bool fib_long = false
+var float fib_long_level = na
+if not na(last_low1) and not na(last_high1)
+    [f_reached, f_ret, f_level] = fib_check_up(last_low1, last_high1)
+    fib_long       := f_reached
+    fib_long_level := f_level
+    score_long     := f_reached ? score_long + 35 : score_long
+
+score_long := liquidity_swept_up ? score_long + 25 : score_long
+score_long := braking_vol_up     ? score_long + 15 : score_long
+score_long := impulse_up         ? score_long + 10 : score_long
+score_long := rsi_val <= 40      ? score_long + 5  : score_long
+score_long := macd_hist > 0      ? score_long + 5  : score_long
+
+// SHORT сигнал
+score_short = 0
+score_short := trend_down or trend_neutral ? score_short + 15 : score_short
+
+var bool fib_short = false
+var float fib_short_level = na
+if not na(last_high1) and not na(last_low1)
+    [f_reached, f_ret, f_level] = fib_check_down(last_high1, last_low1)
+    fib_short       := f_reached
+    fib_short_level := f_level
+    score_short     := f_reached ? score_short + 35 : score_short
+
+score_short := liquidity_swept_down ? score_short + 25 : score_short
+score_short := braking_vol_down     ? score_short + 15 : score_short
+score_short := impulse_down         ? score_short + 10 : score_short
+score_short := rsi_val >= 60        ? score_short + 5  : score_short
+score_short := macd_hist < 0        ? score_short + 5  : score_short
+
+// Штраф за боковик
+score_long  := is_ranging ? math.round(score_long  * 0.5) : score_long
+score_short := is_ranging ? math.round(score_short * 0.5) : score_short
+
+// Финальные условия сигнала
+signal_long  = not is_ranging and score_long  >= min_score and trend_up   and liquidity_swept_up   and impulse_up
+signal_short = not is_ranging and score_short >= min_score and trend_down  and liquidity_swept_down and impulse_down
+
+// ============================================================
+// ШАГ 4: УРОВНИ ВХОДА, СТОП, ОТМЕНА
+// ============================================================
+
+// LONG уровни
+var float long_entry  = na
+var float long_sl     = na
+var float long_cancel = na
+var float long_tp1    = na
+var float long_tp2    = na
+var float long_tp3    = na
+
+if signal_long and not na(last_low1) and not na(last_high1)
+    impulse_size  = last_high1 - last_low1
+    long_entry   := last_high1 - impulse_size * 0.55   // 55% откат
+    long_sl      := ta.lowest(low, 20) - atr_val * 0.3
+    long_cancel  := last_low1                           // ниже начала импульса = отмена
+    long_tp1     := long_entry + impulse_size * 1.0
+    long_tp2     := long_entry + impulse_size * 1.618
+    long_tp3     := ta.highest(high, 100)               // уровень предыдущего шипа
+
+// SHORT уровни
+var float short_entry  = na
+var float short_sl     = na
+var float short_cancel = na
+var float short_tp1    = na
+var float short_tp2    = na
+var float short_tp3    = na
+
+if signal_short and not na(last_high1) and not na(last_low1)
+    impulse_size   = last_high1 - last_low1
+    short_entry   := last_low1 + impulse_size * 0.55
+    short_sl      := ta.highest(high, 20) + atr_val * 0.3
+    short_cancel  := last_high1
+    short_tp1     := short_entry - impulse_size * 1.0
+    short_tp2     := short_entry - impulse_size * 1.618
+    short_tp3     := ta.lowest(low, 100)
+
+// ============================================================
+// ОТОБРАЖЕНИЕ СИГНАЛОВ
+// ============================================================
+
+label_long_color  = score_long  >= 85 ? color.new(color.green, 0) :
+                    score_long  >= 70 ? color.new(color.lime,  0) :
+                    color.new(color.teal, 0)
+
+label_short_color = score_short >= 85 ? color.new(color.red,    0) :
+                    score_short >= 70 ? color.new(color.orange, 0) :
+                    color.new(color.maroon, 0)
+
+label_long_text  = score_long  >= 85 ? "🔥 LONG\n" : score_long  >= 70 ? "✅ LONG\n" : "⚠️ LONG\n"
+label_short_text = score_short >= 85 ? "🔥 SHORT\n" : score_short >= 70 ? "✅ SHORT\n" : "⚠️ SHORT\n"
+
+// Сигнал LONG
+if show_signals and signal_long
+    lbl = label.new(
+         bar_index, low - atr_val * 2,
+         label_long_text +
+         "Скор: " + str.tostring(score_long) + "/100\n" +
+         "Вход: "  + str.tostring(math.round(long_entry,  4)) + "\n" +
+         "Стоп: "  + str.tostring(math.round(long_sl,     4)) + "\n" +
+         "TP1: "   + str.tostring(math.round(long_tp1,    4)) + "\n" +
+         "TP2: "   + str.tostring(math.round(long_tp2,    4)) + "\n" +
+         "Отмена: "+ str.tostring(math.round(long_cancel, 4)),
+         color=label_long_color,
+         textcolor=color.white,
+         style=label.style_label_up,
+         size=size.normal
+         )
+
+// Сигнал SHORT
+if show_signals and signal_short
+    lbl = label.new(
+         bar_index, high + atr_val * 2,
+         label_short_text +
+         "Скор: " + str.tostring(score_short) + "/100\n" +
+         "Вход: "  + str.tostring(math.round(short_entry,  4)) + "\n" +
+         "Стоп: "  + str.tostring(math.round(short_sl,     4)) + "\n" +
+         "TP1: "   + str.tostring(math.round(short_tp1,    4)) + "\n" +
+         "TP2: "   + str.tostring(math.round(short_tp2,    4)) + "\n" +
+         "Отмена: "+ str.tostring(math.round(short_cancel, 4)),
+         color=label_short_color,
+         textcolor=color.white,
+         style=label.style_label_down,
+         size=size.normal
+         )
+
+// Стрелки на графике
+plotshape(show_signals and signal_long,  "LONG",  shape.arrowup,   location.belowbar, color.new(color.green, 0), size=size.large)
+plotshape(show_signals and signal_short, "SHORT", shape.arrowdown, location.abovebar, color.new(color.red,   0), size=size.large)
+
+// ============================================================
+// УРОВНИ TP/SL НА ГРАФИКЕ
+// ============================================================
+
+// Линии для последнего LONG сигнала
+var line line_long_entry  = na
+var line line_long_sl     = na
+var line line_long_tp1    = na
+var line line_long_tp2    = na
+var line line_long_tp3    = na
+
+if show_levels and signal_long
+    line.delete(line_long_entry)
+    line.delete(line_long_sl)
+    line.delete(line_long_tp1)
+    line.delete(line_long_tp2)
+    line.delete(line_long_tp3)
+    line_long_entry := line.new(bar_index, long_entry,  bar_index + 50, long_entry,  color=color.new(color.blue,  0), style=line.style_dashed, width=2)
+    line_long_sl    := line.new(bar_index, long_sl,     bar_index + 50, long_sl,     color=color.new(color.red,   0), style=line.style_solid,  width=1)
+    line_long_tp1   := line.new(bar_index, long_tp1,    bar_index + 50, long_tp1,    color=color.new(color.green, 50), style=line.style_dotted, width=1)
+    line_long_tp2   := line.new(bar_index, long_tp2,    bar_index + 50, long_tp2,    color=color.new(color.green, 20), style=line.style_dotted, width=2)
+    line_long_tp3   := line.new(bar_index, long_tp3,    bar_index + 50, long_tp3,    color=color.new(color.green, 0),  style=line.style_dotted, width=2)
+
+// Линии для последнего SHORT сигнала
+var line line_short_entry = na
+var line line_short_sl    = na
+var line line_short_tp1   = na
+var line line_short_tp2   = na
+var line line_short_tp3   = na
+
+if show_levels and signal_short
+    line.delete(line_short_entry)
+    line.delete(line_short_sl)
+    line.delete(line_short_tp1)
+    line.delete(line_short_tp2)
+    line.delete(line_short_tp3)
+    line_short_entry := line.new(bar_index, short_entry,  bar_index + 50, short_entry,  color=color.new(color.blue,   0), style=line.style_dashed, width=2)
+    line_short_sl    := line.new(bar_index, short_sl,     bar_index + 50, short_sl,     color=color.new(color.red,    0), style=line.style_solid,  width=1)
+    line_short_tp1   := line.new(bar_index, short_tp1,    bar_index + 50, short_tp1,    color=color.new(color.orange, 50), style=line.style_dotted, width=1)
+    line_short_tp2   := line.new(bar_index, short_tp2,    bar_index + 50, short_tp2,    color=color.new(color.orange, 20), style=line.style_dotted, width=2)
+    line_short_tp3   := line.new(bar_index, short_tp3,    bar_index + 50, short_tp3,    color=color.new(color.orange, 0),  style=line.style_dotted, width=2)
+
+// ============================================================
+// ИНФОРМАЦИОННАЯ ТАБЛИЦА
+// ============================================================
+
+var table info_table = table.new(position.top_right, 2, 10,
+     bgcolor=color.new(color.black, 80),
+     border_color=color.new(color.gray, 50),
+     border_width=1)
+
+if barstate.islast
+    table.cell(info_table, 0, 0, "IGOR WAVE STRATEGY", text_color=color.white, text_size=size.small, bgcolor=color.new(color.blue, 60))
+    table.cell(info_table, 1, 0, "", bgcolor=color.new(color.blue, 60))
+
+    table.cell(info_table, 0, 1, "Боковик", text_color=color.gray, text_size=size.small)
+    table.cell(info_table, 1, 1, is_ranging ? "ДА ⚠️" : "НЕТ ✅",
+         text_color=is_ranging ? color.yellow : color.green, text_size=size.small)
+
+    table.cell(info_table, 0, 2, "Тренд", text_color=color.gray, text_size=size.small)
+    trend_txt = trend_up ? "↑ ВВЕРХ" : trend_down ? "↓ ВНИЗ" : "→ НЕЙТРАЛ"
+    trend_clr = trend_up ? color.green : trend_down ? color.red : color.gray
+    table.cell(info_table, 1, 2, trend_txt, text_color=trend_clr, text_size=size.small)
+
+    table.cell(info_table, 0, 3, "RSI", text_color=color.gray, text_size=size.small)
+    rsi_clr = rsi_val <= 30 ? color.green : rsi_val >= 70 ? color.red : color.white
+    table.cell(info_table, 1, 3, str.tostring(math.round(rsi_val, 1)), text_color=rsi_clr, text_size=size.small)
+
+    table.cell(info_table, 0, 4, "Объём", text_color=color.gray, text_size=size.small)
+    vol_clr = vol_ratio >= 2.0 ? color.green : vol_ratio >= 1.5 ? color.yellow : color.white
+    table.cell(info_table, 1, 4, str.tostring(math.round(vol_ratio, 1)) + "x", text_color=vol_clr, text_size=size.small)
+
+    table.cell(info_table, 0, 5, "Ликв. снята ↑", text_color=color.gray, text_size=size.small)
+    table.cell(info_table, 1, 5, liquidity_swept_up ? "✅" : "❌",
+         text_color=liquidity_swept_up ? color.green : color.red, text_size=size.small)
+
+    table.cell(info_table, 0, 6, "Ликв. снята ↓", text_color=color.gray, text_size=size.small)
+    table.cell(info_table, 1, 6, liquidity_swept_down ? "✅" : "❌",
+         text_color=liquidity_swept_down ? color.green : color.red, text_size=size.small)
+
+    table.cell(info_table, 0, 7, "Тормоз. объём", text_color=color.gray, text_size=size.small)
+    braking_any = braking_vol_up or braking_vol_down
+    table.cell(info_table, 1, 7, braking_any ? "✅" : "❌",
+         text_color=braking_any ? color.green : color.red, text_size=size.small)
+
+    table.cell(info_table, 0, 8, "Скор LONG",  text_color=color.gray, text_size=size.small)
+    table.cell(info_table, 1, 8, str.tostring(score_long) + "/100",
+         text_color=score_long >= 70 ? color.green : color.white, text_size=size.small)
+
+    table.cell(info_table, 0, 9, "Скор SHORT", text_color=color.gray, text_size=size.small)
+    table.cell(info_table, 1, 9, str.tostring(score_short) + "/100",
+         text_color=score_short >= 70 ? color.green : color.white, text_size=size.small)
+
+// ============================================================
+// АЛЕРТЫ
+// ============================================================
+
+alertcondition(signal_long,
+     title="LONG сигнал",
+     message="🟢 LONG {{ticker}} | Скор: {{plot_0}} | Вход: {{close}} | TF: {{interval}}")
+
+alertcondition(signal_short,
+     title="SHORT сигнал",
+     message="🔴 SHORT {{ticker}} | Скор: {{plot_0}} | Вход: {{close}} | TF: {{interval}}")
+
+alertcondition(braking_vol_up,
+     title="Тормозящий объём ↑",
+     message="🛑 Тормозящий объём ВВЕРХ {{ticker}} | Объём: {{volume}} | TF: {{interval}}")
+
+alertcondition(braking_vol_down,
+     title="Тормозящий объём ↓",
+     message="🛑 Тормозящий объём ВНИЗ {{ticker}} | Объём: {{volume}} | TF: {{interval}}")
+
+// Скрытые плоты для алертов
+plot(score_long,  "Score Long",  display=display.none)
+plot(score_short, "Score Short", display=display.none)

@@ -1,0 +1,182 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+
+def _load_dotenv() -> None:
+    env_path = Path(__file__).resolve().with_name('.env')
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding='utf-8').splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, value)
+
+
+_load_dotenv()
+
+
+def _env_str(name: str, default: str = "") -> str:
+    return os.getenv(name, default).strip()
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return float(default)
+    try:
+        return float(raw)
+    except ValueError:
+        return float(default)
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return int(default)
+    try:
+        return int(raw)
+    except ValueError:
+        return int(default)
+
+
+def validate_runtime_config() -> None:
+    if TELEGRAM_ENABLED and (not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID):
+        raise ValueError(
+            "TELEGRAM_ENABLED=1, but TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID are not set."
+        )
+
+
+TELEGRAM_ENABLED = _env_int("TELEGRAM_ENABLED", 0) == 1
+TELEGRAM_BOT_TOKEN = _env_str("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = _env_str("TELEGRAM_CHAT_ID", "")
+TELEGRAM_PROXY = _env_str("TELEGRAM_PROXY", "")
+
+DATA_EXCHANGE = _env_str("DATA_EXCHANGE", "bybit")
+
+SYMBOLS = [
+    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
+    "DOGEUSDT", "AVAXUSDT", "LINKUSDT", "DOTUSDT", "ADAUSDT",
+    "LTCUSDT", "ATOMUSDT", "NEARUSDT", "APTUSDT", "ARBUSDT",
+    "OPUSDT", "INJUSDT", "SUIUSDT", "TIAUSDT",
+    "POLUSDT", "RENDERUSDT", "LDOUSDT", "AAVEUSDT",
+    "SANDUSDT", "MANAUSDT", "GALAUSDT", "AXSUSDT",
+]
+
+SYMBOLS_EXTENDED = [
+    "WLDUSDT", "SEIUSDT", "STXUSDT", "RUNEUSDT", "JUPUSDT",
+    "WIFUSDT", "PENDLEUSDT", "EIGENUSDT", "ENAUSDT",
+]
+
+TF_ENTRY = _env_str("TF_ENTRY", "15m")
+TF_HTF = _env_str("TF_HTF", "1h")
+TF_TREND = _env_str("TF_TREND", "4h")
+
+CANDLES_ENTRY = 320
+CANDLES_HTF = 220
+CANDLES_TREND = 160
+
+ATR_PERIOD = 14
+RSI_PERIOD = 14
+EMA_FAST = 20
+EMA_SLOW = 50
+EMA_TREND = 200
+VOLUME_MA_PERIOD = 20
+BB_PERIOD = 20
+BB_STD = 2.0
+MACD_FAST = 12
+MACD_SLOW = 26
+MACD_SIGNAL = 9
+
+SCAN_INTERVAL_SEC = _env_int("SCAN_INTERVAL_SEC", 90)
+SCAN_WORKERS = _env_int("SCAN_WORKERS", 2)
+EXTENDED_SYMBOLS_LIMIT = _env_int("EXTENDED_SYMBOLS_LIMIT", 5)
+SIGNAL_COOLDOWN_SEC = _env_int("SIGNAL_COOLDOWN_SEC", 3600)
+MIN_SCORE = _env_float("MIN_SCORE", 66.0)
+
+RANGING_ATR_RATIO = _env_float("RANGING_ATR_RATIO", 0.007)
+RANGING_BB_WIDTH_MIN = _env_float("RANGING_BB_WIDTH_MIN", 0.012)
+RANGING_LOOKBACK = _env_int("RANGING_LOOKBACK", 20)
+RANGING_MIN_SIGNALS = _env_int("RANGING_MIN_SIGNALS", 3)
+
+WAVE_MIN_IMPULSE_ATR = _env_float("WAVE_MIN_IMPULSE_ATR", 1.5)
+WAVE_LOOKBACK = _env_int("WAVE_LOOKBACK", 50)
+WAVE_EQUALITY_TOLERANCE = _env_float("WAVE_EQUALITY_TOLERANCE", 0.25)
+# Tolerance для условия cur_close vs EMA50 в _trend_from_4h
+# 0.0 = строгое (cur_close > ema50), 0.01 = допускает цену до 1% ниже EMA50
+TREND_EMA50_TOLERANCE = _env_float("TREND_EMA50_TOLERANCE", 0.006)
+TREND_SLOPE_TOLERANCE = _env_float("TREND_SLOPE_TOLERANCE", 0.012)
+PIVOT_WINDOW = _env_int("PIVOT_WINDOW", 5)
+PIVOT_WINDOW_LIVE = _env_int("PIVOT_WINDOW_LIVE", 3)
+STRICT_LAST_PIVOT_BARS = _env_int("STRICT_LAST_PIVOT_BARS", 2)
+
+FIB_LEVELS = [0.236, 0.382, 0.500, 0.618, 0.786]
+FIB_ZONE_TOLERANCE = _env_float("FIB_ZONE_TOLERANCE", 0.028)
+FIB_TARGET_LEVEL = _env_float("FIB_TARGET_LEVEL", 0.618)
+
+SWEEP_LOOKBACK_BARS = _env_int("SWEEP_LOOKBACK_BARS", 20)
+SWEEP_MIN_ATR_RATIO = _env_float("SWEEP_MIN_ATR_RATIO", 0.3)
+SWEEP_MIN_VOL_SURGE = _env_float("SWEEP_MIN_VOL_SURGE", 1.5)
+
+BRAKING_VOL_SPIKE = _env_float("BRAKING_VOL_SPIKE", 1.4)
+BRAKING_ABSORPTION = _env_float("BRAKING_ABSORPTION", 0.30)
+
+IMPULSE_MIN_ATR = _env_float("IMPULSE_MIN_ATR", 0.8)
+IMPULSE_EQUALITY_TOL = _env_float("IMPULSE_EQUALITY_TOL", 0.35)
+IMPULSE_MAX_AGE_BARS = _env_int("IMPULSE_MAX_AGE_BARS", 16)
+IMPULSE_MIN_BARS = _env_int("IMPULSE_MIN_BARS", 2)
+IMPULSE_MAX_BARS = _env_int("IMPULSE_MAX_BARS", 4)
+IMPULSE_PULLBACK_MAX = _env_float("IMPULSE_PULLBACK_MAX", 0.45)
+IMPULSE_BREAKOUT_LOOKBACK = _env_int("IMPULSE_BREAKOUT_LOOKBACK", 12)
+
+ENTRY_FIB_LOW = _env_float("ENTRY_FIB_LOW", 0.382)
+ENTRY_FIB_HIGH = _env_float("ENTRY_FIB_HIGH", 0.618)
+SL_ATR_MULT = _env_float("SL_ATR_MULT", 1.2)
+SL_MIN_ATR_MULT = _env_float("SL_MIN_ATR_MULT", 1.0)
+MIN_RR = _env_float("MIN_RR", 1.6)
+MAX_RR = _env_float("MAX_RR", 4.0)
+MAX_ENTRY_DISTANCE_ATR = _env_float("MAX_ENTRY_DISTANCE_ATR", 1.2)
+
+TP1_WAVE_MULT = _env_float("TP1_WAVE_MULT", 1.0)
+TP2_WAVE_MULT = _env_float("TP2_WAVE_MULT", 1.618)
+TP3_SPIKE_LEVEL = _env_int("TP3_SPIKE_LEVEL", 1) == 1
+
+BACKTEST_ENTRY_WAIT_BARS = _env_int("BACKTEST_ENTRY_WAIT_BARS", 18)
+BACKTEST_TRADE_MAX_BARS = _env_int("BACKTEST_TRADE_MAX_BARS", 220)
+BACKTEST_MOVE_SL_TO_BE_AFTER_TP1 = _env_int("BACKTEST_MOVE_SL_TO_BE_AFTER_TP1", 1) == 1
+BACKTEST_TIMEOUT_EXIT_ON_CLOSE = _env_int("BACKTEST_TIMEOUT_EXIT_ON_CLOSE", 1) == 1
+BACKTEST_CONSERVATIVE_INTRABAR = _env_int("BACKTEST_CONSERVATIVE_INTRABAR", 1) == 1
+TP1_CLOSE_PCT = _env_float("TP1_CLOSE_PCT", 0.30)
+TP2_CLOSE_PCT = _env_float("TP2_CLOSE_PCT", 0.40)
+TP3_CLOSE_PCT = _env_float("TP3_CLOSE_PCT", 0.30)
+
+INITIAL_BALANCE = _env_float("INITIAL_BALANCE", 1000.0)
+RISK_PER_TRADE_PCT = _env_float("RISK_PER_TRADE_PCT", 1.0)
+MAX_OPEN_TRADES = _env_int("MAX_OPEN_TRADES", 3)
+MAX_DAILY_LOSS_PCT = _env_float("MAX_DAILY_LOSS_PCT", 5.0)
+MAX_DRAWDOWN_PCT = _env_float("MAX_DRAWDOWN_PCT", 15.0)
+LEVERAGE = _env_int("LEVERAGE", 5)
+
+BEST_SESSIONS = ["london", "london_newyork_overlap", "newyork"]
+SKIP_SESSIONS = ["asia", "rollover"]
+
+VOLUME_CONFIRMATION_REQUIRED = _env_int("VOLUME_CONFIRMATION_REQUIRED", 0) == 1
+BTC_FILTER_ENABLED = _env_int("BTC_FILTER_ENABLED", 1) == 1
+BTC_FILTER_DROP_PCT = _env_float("BTC_FILTER_DROP_PCT", 1.2)
+BTC_FILTER_LOOKBACK_BARS = _env_int("BTC_FILTER_LOOKBACK_BARS", 3)
+BTC_FILTER_EMA_PERIOD = _env_int("BTC_FILTER_EMA_PERIOD", 20)
+BTC_FILTER_REQUIRE_BELOW_EMA = _env_int("BTC_FILTER_REQUIRE_BELOW_EMA", 1) == 1
+LOG_REJECT_SUMMARY_EVERY_CYCLE = _env_int("LOG_REJECT_SUMMARY_EVERY_CYCLE", 1) == 1
+DATA_CACHE_TTL_SEC = _env_int("DATA_CACHE_TTL_SEC", 45)
+DATA_REQUEST_PAUSE_SEC = _env_float("DATA_REQUEST_PAUSE_SEC", 0.15)
+DATA_RETRY_SLEEP_SEC = _env_float("DATA_RETRY_SLEEP_SEC", 3.0)
+
+LOG_LEVEL = _env_str("LOG_LEVEL", "INFO")
+LOG_FILE = "logs/wave_scanner.log"
+SIGNALS_CSV = "logs/signals.csv"
+TRADES_CSV = "logs/trades.csv"

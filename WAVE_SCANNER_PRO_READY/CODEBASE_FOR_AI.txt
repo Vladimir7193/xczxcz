@@ -1,0 +1,2117 @@
+﻿============================================================
+FILE: config.py
+============================================================
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+
+def _load_dotenv() -> None:
+    env_path = Path(__file__).resolve().with_name('.env')
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding='utf-8').splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, value)
+
+
+_load_dotenv()
+
+
+def _env_str(name: str, default: str = "") -> str:
+    return os.getenv(name, default).strip()
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return float(default)
+    try:
+        return float(raw)
+    except ValueError:
+        return float(default)
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return int(default)
+    try:
+        return int(raw)
+    except ValueError:
+        return int(default)
+
+
+def validate_runtime_config() -> None:
+    if TELEGRAM_ENABLED and (not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID):
+        raise ValueError(
+            "TELEGRAM_ENABLED=1, but TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID are not set."
+        )
+
+
+TELEGRAM_ENABLED = _env_int("TELEGRAM_ENABLED", 0) == 1
+TELEGRAM_BOT_TOKEN = _env_str("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = _env_str("TELEGRAM_CHAT_ID", "")
+TELEGRAM_PROXY = _env_str("TELEGRAM_PROXY", "")
+
+DATA_EXCHANGE = _env_str("DATA_EXCHANGE", "bybit")
+
+SYMBOLS = [
+    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
+    "DOGEUSDT", "AVAXUSDT", "LINKUSDT", "DOTUSDT", "ADAUSDT",
+    "LTCUSDT", "ATOMUSDT", "NEARUSDT", "APTUSDT", "ARBUSDT",
+    "OPUSDT", "INJUSDT", "SUIUSDT", "TIAUSDT",
+    "POLUSDT", "RENDERUSDT", "LDOUSDT", "AAVEUSDT",
+    "SANDUSDT", "MANAUSDT", "GALAUSDT", "AXSUSDT",
+]
+
+SYMBOLS_EXTENDED = [
+    "WLDUSDT", "SEIUSDT", "STXUSDT", "RUNEUSDT", "JUPUSDT",
+    "WIFUSDT", "PENDLEUSDT", "EIGENUSDT", "ENAUSDT",
+]
+
+TF_ENTRY = "5m"
+TF_HTF = "1h"
+TF_TREND = "4h"
+
+CANDLES_ENTRY = 320
+CANDLES_HTF = 220
+CANDLES_TREND = 160
+
+ATR_PERIOD = 14
+RSI_PERIOD = 14
+EMA_FAST = 20
+EMA_SLOW = 50
+EMA_TREND = 200
+VOLUME_MA_PERIOD = 20
+BB_PERIOD = 20
+BB_STD = 2.0
+MACD_FAST = 12
+MACD_SLOW = 26
+MACD_SIGNAL = 9
+
+SCAN_INTERVAL_SEC = _env_int("SCAN_INTERVAL_SEC", 60)
+SIGNAL_COOLDOWN_SEC = _env_int("SIGNAL_COOLDOWN_SEC", 14400)
+MIN_SCORE = _env_float("MIN_SCORE", 45.0)
+
+RANGING_ATR_RATIO = _env_float("RANGING_ATR_RATIO", 0.008)
+RANGING_BB_WIDTH_MIN = _env_float("RANGING_BB_WIDTH_MIN", 0.015)
+RANGING_LOOKBACK = _env_int("RANGING_LOOKBACK", 20)
+
+WAVE_MIN_IMPULSE_ATR = _env_float("WAVE_MIN_IMPULSE_ATR", 1.5)
+WAVE_LOOKBACK = _env_int("WAVE_LOOKBACK", 50)
+WAVE_EQUALITY_TOLERANCE = _env_float("WAVE_EQUALITY_TOLERANCE", 0.25)
+# Tolerance для условия cur_close vs EMA50 в _trend_from_4h
+# 0.0 = строгое (cur_close > ema50), 0.01 = допускает цену до 1% ниже EMA50
+TREND_EMA50_TOLERANCE = _env_float("TREND_EMA50_TOLERANCE", 0.0)
+PIVOT_WINDOW = _env_int("PIVOT_WINDOW", 5)
+PIVOT_WINDOW_LIVE = _env_int("PIVOT_WINDOW_LIVE", 3)
+STRICT_LAST_PIVOT_BARS = _env_int("STRICT_LAST_PIVOT_BARS", 2)
+
+FIB_LEVELS = [0.236, 0.382, 0.500, 0.618, 0.786]
+FIB_ZONE_TOLERANCE = _env_float("FIB_ZONE_TOLERANCE", 0.020)
+FIB_TARGET_LEVEL = _env_float("FIB_TARGET_LEVEL", 0.618)
+
+SWEEP_LOOKBACK_BARS = _env_int("SWEEP_LOOKBACK_BARS", 20)
+SWEEP_MIN_ATR_RATIO = _env_float("SWEEP_MIN_ATR_RATIO", 0.3)
+SWEEP_MIN_VOL_SURGE = _env_float("SWEEP_MIN_VOL_SURGE", 1.5)
+
+BRAKING_VOL_SPIKE = _env_float("BRAKING_VOL_SPIKE", 1.4)
+BRAKING_ABSORPTION = _env_float("BRAKING_ABSORPTION", 0.30)
+
+IMPULSE_MIN_ATR = _env_float("IMPULSE_MIN_ATR", 0.8)
+IMPULSE_EQUALITY_TOL = _env_float("IMPULSE_EQUALITY_TOL", 0.35)
+IMPULSE_MAX_AGE_BARS = _env_int("IMPULSE_MAX_AGE_BARS", 10)
+IMPULSE_MIN_BARS = _env_int("IMPULSE_MIN_BARS", 2)
+IMPULSE_MAX_BARS = _env_int("IMPULSE_MAX_BARS", 4)
+IMPULSE_PULLBACK_MAX = _env_float("IMPULSE_PULLBACK_MAX", 0.45)
+IMPULSE_BREAKOUT_LOOKBACK = _env_int("IMPULSE_BREAKOUT_LOOKBACK", 12)
+
+ENTRY_FIB_LOW = _env_float("ENTRY_FIB_LOW", 0.50)
+ENTRY_FIB_HIGH = _env_float("ENTRY_FIB_HIGH", 0.618)
+SL_ATR_MULT = _env_float("SL_ATR_MULT", 1.2)
+SL_MIN_ATR_MULT = _env_float("SL_MIN_ATR_MULT", 1.0)
+MIN_RR = _env_float("MIN_RR", 2.0)
+MAX_RR = _env_float("MAX_RR", 12.0)
+MAX_ENTRY_DISTANCE_ATR = _env_float("MAX_ENTRY_DISTANCE_ATR", 1.2)
+
+TP1_WAVE_MULT = _env_float("TP1_WAVE_MULT", 1.0)
+TP2_WAVE_MULT = _env_float("TP2_WAVE_MULT", 1.618)
+TP3_SPIKE_LEVEL = _env_int("TP3_SPIKE_LEVEL", 1) == 1
+
+BACKTEST_ENTRY_WAIT_BARS = _env_int("BACKTEST_ENTRY_WAIT_BARS", 18)
+BACKTEST_TRADE_MAX_BARS = _env_int("BACKTEST_TRADE_MAX_BARS", 220)
+BACKTEST_MOVE_SL_TO_BE_AFTER_TP1 = _env_int("BACKTEST_MOVE_SL_TO_BE_AFTER_TP1", 1) == 1
+BACKTEST_TIMEOUT_EXIT_ON_CLOSE = _env_int("BACKTEST_TIMEOUT_EXIT_ON_CLOSE", 1) == 1
+BACKTEST_CONSERVATIVE_INTRABAR = _env_int("BACKTEST_CONSERVATIVE_INTRABAR", 1) == 1
+TP1_CLOSE_PCT = _env_float("TP1_CLOSE_PCT", 0.30)
+TP2_CLOSE_PCT = _env_float("TP2_CLOSE_PCT", 0.40)
+TP3_CLOSE_PCT = _env_float("TP3_CLOSE_PCT", 0.30)
+
+INITIAL_BALANCE = _env_float("INITIAL_BALANCE", 1000.0)
+RISK_PER_TRADE_PCT = _env_float("RISK_PER_TRADE_PCT", 1.0)
+MAX_OPEN_TRADES = _env_int("MAX_OPEN_TRADES", 3)
+MAX_DAILY_LOSS_PCT = _env_float("MAX_DAILY_LOSS_PCT", 5.0)
+MAX_DRAWDOWN_PCT = _env_float("MAX_DRAWDOWN_PCT", 15.0)
+LEVERAGE = _env_int("LEVERAGE", 5)
+
+BEST_SESSIONS = ["london", "london_newyork_overlap", "newyork"]
+SKIP_SESSIONS = ["asia", "rollover"]
+
+LOG_LEVEL = _env_str("LOG_LEVEL", "INFO")
+LOG_FILE = "logs/wave_scanner.log"
+SIGNALS_CSV = "logs/signals.csv"
+TRADES_CSV = "logs/trades.csv"
+
+
+============================================================
+FILE: main.py
+============================================================
+#!/usr/bin/env python3
+# ============================================================
+#  WAVE_SCANNER_PRO — main.py
+#  Сканер по волновой стратегии Игоря
+#
+#  Шаг 0: Фильтр боковика
+#  Шаг 1: Структура 1h/4h (импульс + ABC)
+#  Шаг 2: Завершение коррекции (Фибо + ликвидность + A=C + объём)
+#  Шаг 3: Первый импульс на 5m
+#  Шаг 4: Вход 50-61.8%, стоп, отмена
+#  Шаг 5: Цели (TP1/TP2/TP3 + шип)
+# ============================================================
+from __future__ import annotations
+
+import logging
+import os
+import signal as signal_module
+import sys
+import time
+from datetime import datetime, timezone
+from typing import List
+
+sys.path.insert(0, os.path.dirname(__file__))
+
+import config as cfg
+cfg.validate_runtime_config()
+from logger import setup_logging, log_signal
+from data_fetcher import fetch_multi_tf
+from signal_engine import WaveSignalEngine, WaveSignal
+from telegram_notify import send_wave_signal, send_status, send_error, send_daily_report
+
+setup_logging()
+logger = logging.getLogger("main")
+
+engine  = WaveSignalEngine()
+_running = True
+
+# Статистика дня
+_stats = {"signals": 0, "strong": 0, "good": 0, "weak": 0, "cycles": 0}
+_start_time = datetime.now(timezone.utc)
+
+# Коррелированные группы — из каждой берём только лучший сигнал
+CORR_GROUPS = [
+    {"BTCUSDT", "ETHUSDT"},
+    {"SOLUSDT", "AVAXUSDT"},
+    {"ARBUSDT", "OPUSDT"},
+    {"INJUSDT", "SUIUSDT", "APTUSDT"},
+]
+
+
+def _handle_stop(signum, frame):
+    global _running
+    logger.info("Stop signal received")
+    _running = False
+
+
+signal_module.signal(signal_module.SIGINT,  _handle_stop)
+signal_module.signal(signal_module.SIGTERM, _handle_stop)
+
+
+def scan_symbol(symbol: str) -> List[WaveSignal]:
+    try:
+        data = fetch_multi_tf(symbol)
+        if not data:
+            return []
+        return engine.process(symbol, data)
+    except Exception as e:
+        logger.error(f"Error scanning {symbol}: {e}", exc_info=True)
+        return []
+
+
+def process_signal(sig: WaveSignal) -> None:
+    log_signal(sig)
+    send_wave_signal(sig)
+
+    _stats["signals"] += 1
+    if "STRONG" in sig.label:   _stats["strong"] += 1
+    elif "GOOD" in sig.label:   _stats["good"]   += 1
+    else:                        _stats["weak"]   += 1
+
+    logger.info(
+        f"✅ SIGNAL: {sig.symbol} {sig.direction.upper()} "
+        f"score={sig.score:.0f} rr={sig.rr_ratio:.2f} "
+        f"entry={sig.entry_price:.4f} sl={sig.stop_loss:.4f}"
+    )
+
+
+def scan_symbols(symbols: list) -> List[WaveSignal]:
+    """Сканирует список символов, возвращает все найденные сигналы."""
+    all_signals: List[WaveSignal] = []
+    for i, symbol in enumerate(symbols):
+        if not _running:
+            break
+        signals = scan_symbol(symbol)
+        all_signals.extend(signals)
+        if i < len(symbols) - 1:
+            time.sleep(0.8)
+    return all_signals
+
+
+def filter_correlated(signals: List[WaveSignal]) -> List[WaveSignal]:
+    """Из каждой коррелированной группы берём только лучший сигнал."""
+    signals.sort(key=lambda s: s.score, reverse=True)
+    filtered: List[WaveSignal] = []
+    used_groups: set = set()
+    for sig in signals:
+        group_id = None
+        for idx, group in enumerate(CORR_GROUPS):
+            if sig.symbol in group:
+                group_id = idx
+                break
+        if group_id is not None:
+            if group_id in used_groups:
+                logger.info(f"Skip {sig.symbol} (correlated group)")
+                continue
+            used_groups.add(group_id)
+        filtered.append(sig)
+    return filtered
+
+
+def run_cycle() -> int:
+    # ── Шаг 1: сканируем основные 20 пар ─────────────────────
+    logger.info(f"Scanning {len(cfg.SYMBOLS)} main symbols...")
+    signals = scan_symbols(cfg.SYMBOLS)
+
+    # ── Шаг 2: нет сигналов — подключаем расширенные 10 пар ──
+    if not signals and cfg.SYMBOLS_EXTENDED:
+        logger.info(
+            f"No signals in main symbols. "
+            f"Expanding to +{len(cfg.SYMBOLS_EXTENDED)} pairs..."
+        )
+        extra = scan_symbols(cfg.SYMBOLS_EXTENDED)
+        signals.extend(extra)
+        if signals:
+            logger.info(f"Found {len(signals)} signals in extended pairs")
+        else:
+            logger.info("No signals in extended pairs either")
+
+    # ── Шаг 3: фильтр корреляции и отправка ──────────────────
+    filtered = filter_correlated(signals)
+    for sig in filtered:
+        process_signal(sig)
+    return len(filtered)
+
+
+def main() -> None:
+    logger.info("=" * 60)
+    logger.info("  WAVE_SCANNER_PRO v1.0 — Starting")
+    logger.info(f"  Symbols: {len(cfg.SYMBOLS)}")
+    logger.info(f"  Min score: {cfg.MIN_SCORE}")
+    logger.info(f"  Scan interval: {cfg.SCAN_INTERVAL_SEC}s")
+    logger.info("=" * 60)
+
+    send_status(
+        f"🌊 WAVE SCANNER PRO запущен\n"
+        f"📊 Пар: {len(cfg.SYMBOLS)}\n"
+        f"🎯 Мин. скор: {cfg.MIN_SCORE}\n"
+        f"⏱ Интервал: {cfg.SCAN_INTERVAL_SEC}s\n\n"
+        f"Стратегия Игоря:\n"
+        f"0️⃣ Фильтр боковика\n"
+        f"1️⃣ Структура 1h/4h\n"
+        f"2️⃣ Завершение коррекции\n"
+        f"3️⃣ Импульс на 5m\n"
+        f"4️⃣ Вход 50-61.8%\n"
+        f"5️⃣ Цели TP1/TP2/TP3"
+    )
+
+    last_report_date = datetime.now(timezone.utc).date()
+    cycle_count = 0
+
+    while _running:
+        cycle_start = time.time()
+        cycle_count += 1
+        _stats["cycles"] = cycle_count
+
+        try:
+            n = run_cycle()
+            elapsed = time.time() - cycle_start
+            logger.info(f"Cycle #{cycle_count} done in {elapsed:.1f}s — {n} signals")
+
+            # Дневной отчёт
+            today = datetime.now(timezone.utc).date()
+            if today != last_report_date:
+                uptime = str(datetime.now(timezone.utc) - _start_time).split(".")[0]
+                send_daily_report({**_stats, "date": str(today), "uptime": uptime})
+                last_report_date = today
+                _stats.update({"signals": 0, "strong": 0, "good": 0, "weak": 0})
+
+            sleep_time = max(0, cfg.SCAN_INTERVAL_SEC - elapsed)
+            if sleep_time > 0 and _running:
+                time.sleep(sleep_time)
+
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            logger.error(f"Cycle error: {e}", exc_info=True)
+            send_error(f"Ошибка цикла #{cycle_count}: {e}")
+            time.sleep(30)
+
+    logger.info("Scanner stopped.")
+    send_status("⛔ WAVE SCANNER PRO остановлен")
+
+
+if __name__ == "__main__":
+    main()
+
+
+============================================================
+FILE: wave_analyzer.py
+============================================================
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from typing import Optional, List, Tuple
+
+import pandas as pd
+
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
+import config as cfg
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class WavePoint:
+    index: int
+    price: float
+    timestamp: pd.Timestamp
+    is_high: bool
+
+
+@dataclass
+class WaveStructure:
+    trend: str = "ranging"
+    wave1_start: Optional[WavePoint] = None
+    wave1_end: Optional[WavePoint] = None
+    wave2_end: Optional[WavePoint] = None
+    wave3_end: Optional[WavePoint] = None
+    wave4_end: Optional[WavePoint] = None
+    wave5_end: Optional[WavePoint] = None
+    wave_a: Optional[WavePoint] = None
+    wave_b: Optional[WavePoint] = None
+    wave_c: Optional[WavePoint] = None
+    impulse_size: float = 0.0
+    wave3_size: float = 0.0
+    correction_pct: float = 0.0
+    fib_level: float = 0.0
+    a_equals_c: bool = False
+    has_expanding: bool = False
+    spike_level: float = 0.0
+    correction_type: str = "unknown"
+    wave4_valid: bool = False
+    has_5waves: bool = False
+
+    @property
+    def impulse_start(self) -> Optional[WavePoint]:
+        return self.wave1_start
+
+    @property
+    def impulse_end(self) -> Optional[WavePoint]:
+        return self.wave5_end if self.wave5_end else self.wave3_end
+
+
+@dataclass
+class CorrectionComplete:
+    complete: bool = False
+    fib_reached: bool = False
+    fib_level: float = 0.0
+    liquidity_swept: bool = False
+    a_equals_c: bool = False
+    braking_volume: bool = False
+    braking_strength: float = 0.0
+    score: float = 0.0
+    details: dict = field(default_factory=dict)
+
+
+def is_ranging(df: pd.DataFrame) -> Tuple[bool, str]:
+    if len(df) < cfg.RANGING_LOOKBACK + 5:
+        return True, "insufficient_data"
+    close = df["close"]
+    high = df["high"]
+    low = df["low"]
+    tr = pd.concat([(high - low), (high - close.shift()).abs(), (low - close.shift()).abs()], axis=1).max(axis=1)
+    atr = tr.ewm(span=cfg.ATR_PERIOD, adjust=False).mean()
+    cur_atr = float(atr.iloc[-1])
+    cur_price = float(close.iloc[-1])
+    if cur_price <= 0:
+        return True, "invalid_price"
+    atr_ratio = cur_atr / cur_price
+    low_volatility = atr_ratio < cfg.RANGING_ATR_RATIO
+    bb_mid = close.rolling(cfg.BB_PERIOD).mean()
+    bb_std = close.rolling(cfg.BB_PERIOD).std()
+    bb_upper = bb_mid + cfg.BB_STD * bb_std
+    bb_lower = bb_mid - cfg.BB_STD * bb_std
+    bb_width = ((bb_upper - bb_lower) / bb_mid).iloc[-1]
+    bb_squeeze = bb_width < cfg.RANGING_BB_WIDTH_MIN
+    lookback_high = high.iloc[-cfg.RANGING_LOOKBACK:].max()
+    lookback_low = low.iloc[-cfg.RANGING_LOOKBACK:].min()
+    range_size = (lookback_high - lookback_low) / cur_price
+    tight_range = range_size < cfg.RANGING_ATR_RATIO * 3
+    ema_fast = close.ewm(span=cfg.EMA_FAST, adjust=False).mean()
+    ema_slope = abs(float(ema_fast.iloc[-1]) - float(ema_fast.iloc[-cfg.RANGING_LOOKBACK])) / cur_price
+    flat_ema = ema_slope < 0.005
+    ranging_signals = sum([low_volatility, bb_squeeze, tight_range, flat_ema])
+    if ranging_signals >= 2:
+        return True, f"atr={atr_ratio:.3f} bb_width={bb_width:.3f} range={range_size:.3f}"
+    return False, "trending"
+
+
+def find_pivots(df: pd.DataFrame, window: int | None = None) -> Tuple[List[WavePoint], List[WavePoint]]:
+    w = cfg.PIVOT_WINDOW if window is None else window
+    highs: List[WavePoint] = []
+    lows: List[WavePoint] = []
+    last_idx = len(df) - 1
+    for i in range(w, len(df) - w):
+        if df["high"].iloc[i] == df["high"].iloc[i - w:i + w + 1].max():
+            highs.append(WavePoint(i, float(df["high"].iloc[i]), df.index[i], True))
+        if df["low"].iloc[i] == df["low"].iloc[i - w:i + w + 1].min():
+            lows.append(WavePoint(i, float(df["low"].iloc[i]), df.index[i], False))
+    if len(df) >= w + 2:
+        recent_high = float(df["high"].iloc[-(cfg.STRICT_LAST_PIVOT_BARS + 1):].max())
+        recent_low = float(df["low"].iloc[-(cfg.STRICT_LAST_PIVOT_BARS + 1):].min())
+        if float(df["high"].iloc[last_idx]) >= recent_high:
+            highs.append(WavePoint(last_idx, float(df["high"].iloc[last_idx]), df.index[last_idx], True))
+        if float(df["low"].iloc[last_idx]) <= recent_low:
+            lows.append(WavePoint(last_idx, float(df["low"].iloc[last_idx]), df.index[last_idx], False))
+    return highs, lows
+
+
+def check_fibonacci(start: float, end: float, current: float, direction: str) -> Tuple[float, bool]:
+    impulse = abs(end - start)
+    if impulse <= 0:
+        return 0.0, False
+    retracement = (end - current) / impulse if direction == "up" else (current - end) / impulse
+    if retracement < 0 or retracement > 1.0:
+        return round(retracement, 3), False
+    closest = min(cfg.FIB_LEVELS, key=lambda x: abs(x - retracement))
+    reached = abs(retracement - closest) <= cfg.FIB_ZONE_TOLERANCE
+    return round(closest, 3), reached
+
+
+def classify_correction(df: pd.DataFrame, start_idx: int, end_idx: int) -> str:
+    if end_idx <= start_idx or end_idx >= len(df):
+        return "unknown"
+    segment = df.iloc[start_idx:end_idx + 1]
+    if len(segment) < 3:
+        return "unknown"
+    price_range = abs(float(segment["high"].max()) - float(segment["low"].min()))
+    tr = pd.concat([
+        segment["high"] - segment["low"],
+        (segment["high"] - segment["close"].shift()).abs(),
+        (segment["low"] - segment["close"].shift()).abs(),
+    ], axis=1).max(axis=1)
+    avg_atr = float(tr.mean()) if len(tr) else 0.0
+    if avg_atr <= 0:
+        return "unknown"
+    return "sharp" if price_range / avg_atr >= 3.0 and len(segment) <= 8 else "flat"
+
+
+def find_spike_level(df: pd.DataFrame, direction: str) -> float:
+    if len(df) < 20:
+        return 0.0
+    if direction == "up":
+        return float(df["high"].iloc[-20:-1].max())
+    return float(df["low"].iloc[-20:-1].min())
+
+
+def _trend_from_4h(df_trend: pd.DataFrame) -> str:
+    if len(df_trend) < 30:
+        return "neutral"
+    ema50 = df_trend["close"].ewm(span=50, adjust=False).mean()
+    ema200 = df_trend["close"].ewm(span=200, adjust=False).mean()
+    cur_close = float(df_trend["close"].iloc[-1])
+    ema50_now = float(ema50.iloc[-1])
+    ema200_now = float(ema200.iloc[-1])
+    ema50_prev = float(ema50.iloc[-10])
+    slope = (ema50_now - ema50_prev) / ema50_prev if ema50_prev else 0.0
+    tol = ema50_now * cfg.TREND_EMA50_TOLERANCE
+    if cur_close >= ema50_now - tol and ema50_now > ema200_now and slope > -0.005:
+        return "up"
+    if cur_close <= ema50_now + tol and ema50_now < ema200_now and slope < 0.005:
+        return "down"
+    return "neutral"
+
+
+def _simple_directional_structure(df_htf: pd.DataFrame, direction: str, atr_now: float) -> Optional[WaveStructure]:
+    if len(df_htf) < 30 or atr_now <= 0:
+        return None
+    window = min(cfg.WAVE_LOOKBACK, len(df_htf) - 1)
+    seg = df_htf.iloc[-window:]
+    if direction == "up":
+        start_idx = int(seg["low"].idxmin() in seg.index and seg.index.get_loc(seg["low"].idxmin()))
+        after = seg.iloc[start_idx:]
+        if len(after) < 10:
+            return None
+        peak_local = int(after["high"].idxmax() in after.index and after.index.get_loc(after["high"].idxmax()))
+        peak_idx = start_idx + peak_local
+        if peak_idx <= start_idx + 3:
+            return None
+        start_price = float(seg["low"].iloc[start_idx])
+        peak_price = float(seg["high"].iloc[peak_idx])
+        impulse = peak_price - start_price
+        if impulse <= 0 or impulse / atr_now < cfg.WAVE_MIN_IMPULSE_ATR:
+            return None
+        corr_seg = seg.iloc[peak_idx:]
+        corr_price = float(corr_seg["low"].iloc[-1])
+        corr_pct = (peak_price - corr_price) / impulse if impulse else 0.0
+        if not 0.2 <= corr_pct <= 0.9:
+            return None
+        w1 = WavePoint(seg.index[start_idx], start_price, seg.index[start_idx], False)
+        w5 = WavePoint(seg.index[peak_idx], peak_price, seg.index[peak_idx], True)
+        wc = WavePoint(len(df_htf) - 1, float(df_htf["close"].iloc[-1]), df_htf.index[-1], False)
+        # A = peak → corr_low, C = corr_low → current
+        wave_a = peak_price - corr_price
+        wave_c = abs(float(df_htf["close"].iloc[-1]) - corr_price)
+        a_equals_c = wave_a > 0 and abs(wave_c - wave_a) / wave_a <= cfg.WAVE_EQUALITY_TOLERANCE
+    else:
+        start_idx = int(seg["high"].idxmax() in seg.index and seg.index.get_loc(seg["high"].idxmax()))
+        after = seg.iloc[start_idx:]
+        if len(after) < 10:
+            return None
+        trough_local = int(after["low"].idxmin() in after.index and after.index.get_loc(after["low"].idxmin()))
+        peak_idx = start_idx + trough_local
+        if peak_idx <= start_idx + 3:
+            return None
+        start_price = float(seg["high"].iloc[start_idx])
+        peak_price = float(seg["low"].iloc[peak_idx])
+        impulse = start_price - peak_price
+        if impulse <= 0 or impulse / atr_now < cfg.WAVE_MIN_IMPULSE_ATR:
+            return None
+        corr_seg = seg.iloc[peak_idx:]
+        corr_price = float(corr_seg["high"].iloc[-1])
+        corr_pct = (corr_price - peak_price) / impulse if impulse else 0.0
+        if not 0.2 <= corr_pct <= 0.9:
+            return None
+        w1 = WavePoint(seg.index[start_idx], start_price, seg.index[start_idx], True)
+        w5 = WavePoint(seg.index[peak_idx], peak_price, seg.index[peak_idx], False)
+        wc = WavePoint(len(df_htf) - 1, float(df_htf["close"].iloc[-1]), df_htf.index[-1], True)
+        # A = peak → corr_high, C = corr_high → current
+        wave_a = corr_price - peak_price
+        wave_c = abs(float(df_htf["close"].iloc[-1]) - corr_price)
+        a_equals_c = wave_a > 0 and abs(wave_c - wave_a) / wave_a <= cfg.WAVE_EQUALITY_TOLERANCE
+
+    fib_level, _ = check_fibonacci(w1.price, w5.price, wc.price, direction)
+    return WaveStructure(
+        trend=direction,
+        wave1_start=w1,
+        wave5_end=w5,
+        wave_c=wc,
+        impulse_size=round(impulse / atr_now, 3),
+        wave3_size=round(impulse / atr_now, 3),
+        correction_pct=round(corr_pct, 3),
+        fib_level=fib_level,
+        a_equals_c=a_equals_c,
+        has_expanding=False,
+        spike_level=find_spike_level(df_htf, direction),
+        correction_type=classify_correction(df_htf, w5.index if isinstance(w5.index, int) else 0, len(df_htf) - 1),
+        wave4_valid=True,
+        has_5waves=False,
+    )
+
+
+def analyze_wave_structure(df_htf: pd.DataFrame, df_trend: pd.DataFrame) -> WaveStructure:
+    structure = WaveStructure(trend="ranging")
+    if len(df_htf) < 50:
+        return structure
+    tr = pd.concat([
+        df_htf["high"] - df_htf["low"],
+        (df_htf["high"] - df_htf["close"].shift()).abs(),
+        (df_htf["low"] - df_htf["close"].shift()).abs(),
+    ], axis=1).max(axis=1)
+    atr = tr.ewm(span=cfg.ATR_PERIOD, adjust=False).mean()
+    cur_atr = float(atr.iloc[-1])
+    ematrend = _trend_from_4h(df_trend)
+    if ematrend not in ("up", "down"):
+        return structure
+    candidate = _simple_directional_structure(df_htf, ematrend, cur_atr)
+    return candidate if candidate is not None else structure
+
+
+def _check_braking_volume(df: pd.DataFrame, direction: str, vol_ma: pd.Series, atr: pd.Series, lookback: int = 5) -> Tuple[bool, float]:
+    if len(df) < lookback + 3:
+        return False, 0.0
+    for i in range(len(df) - 1, max(len(df) - lookback - 1, 0), -1):
+        cur_vol = float(df["volume"].iloc[i])
+        cur_vol_ma = float(vol_ma.iloc[i]) if not pd.isna(vol_ma.iloc[i]) else 0.0
+        if cur_vol_ma <= 0:
+            continue
+        vol_spike = cur_vol / cur_vol_ma
+        if vol_spike < cfg.BRAKING_VOL_SPIKE:
+            continue
+        cur_low = float(df["low"].iloc[i])
+        cur_high = float(df["high"].iloc[i])
+        cur_close = float(df["close"].iloc[i])
+        bar_range = cur_high - cur_low
+        if bar_range <= 0:
+            continue
+        absorption = (cur_close - cur_low) / bar_range if direction == "up" else (cur_high - cur_close) / bar_range
+        if absorption < cfg.BRAKING_ABSORPTION:
+            continue
+        hold_count = 0
+        for j in range(i + 1, min(i + 4, len(df))):
+            if direction == "up":
+                if float(df["low"].iloc[j]) >= cur_low * 0.999:
+                    hold_count += 1
+            else:
+                if float(df["high"].iloc[j]) <= cur_high * 1.001:
+                    hold_count += 1
+        if hold_count < 1:
+            continue
+        strength = min(1.0, (vol_spike / 5.0) * 0.4 + absorption * 0.4 + (hold_count / 3.0) * 0.2)
+        return True, round(strength, 2)
+    return False, 0.0
+
+
+def check_correction_complete(df_entry: pd.DataFrame, structure: WaveStructure) -> CorrectionComplete:
+    result = CorrectionComplete()
+    impstart = structure.impulse_start
+    impend = structure.impulse_end
+    if impstart is None or impend is None:
+        return result
+    curprice = float(df_entry["close"].iloc[-1])
+    impulsesize = abs(impend.price - impstart.price)
+    if impulsesize <= 0:
+        return result
+    if structure.wave_c is not None:
+        correction_price = structure.wave_c.price
+    else:
+        lookback = min(20, len(df_entry))
+        correction_price = float(df_entry["low"].iloc[-lookback:].min()) if structure.trend == "up" else float(df_entry["high"].iloc[-lookback:].max())
+    retracement = (impend.price - correction_price) / impulsesize if structure.trend == "up" else (correction_price - impend.price) / impulsesize
+    fibvalid = 0.2 <= retracement <= 0.9
+
+    # Синхронизировано с cfg.FIB_LEVELS — нет захардкоженных уровней
+    closest_level = min(cfg.FIB_LEVELS, key=lambda x: abs(x - retracement))
+    fibreached = fibvalid and abs(retracement - closest_level) <= cfg.FIB_ZONE_TOLERANCE
+    fiblevel = closest_level if fibreached else round(retracement, 3)
+
+    # Скоринг по уровням (глубина коррекции)
+    if fibreached:
+        if closest_level >= 0.618:
+            fib_score = 35.0
+        elif closest_level >= 0.500:
+            fib_score = 25.0
+        elif closest_level >= 0.382:
+            fib_score = 20.0   # было 15 — shallow continuation тоже торгуем
+        else:  # 0.236
+            fib_score = 15.0   # было 8 — shallow retracement в тренде
+    else:
+        fib_score = 0.0
+
+    result.fib_reached = fibreached
+    result.fib_level = round(fiblevel, 3)
+    lookback = min(cfg.SWEEP_LOOKBACK_BARS, len(df_entry) - 5)
+    if lookback > 5:
+        recentlow = float(df_entry["low"].iloc[-lookback - 5:-5].min())
+        recenthigh = float(df_entry["high"].iloc[-lookback - 5:-5].max())
+    else:
+        recentlow = float(df_entry["low"].iloc[:-1].min())
+        recenthigh = float(df_entry["high"].iloc[:-1].max())
+    last5low = float(df_entry["low"].iloc[-5:].min())
+    last5high = float(df_entry["high"].iloc[-5:].max())
+    swept = last5low <= recentlow if structure.trend == "up" else last5high >= recenthigh
+    result.liquidity_swept = swept
+    result.a_equals_c = structure.a_equals_c
+    vol_ma = df_entry["volume"].rolling(cfg.VOLUME_MA_PERIOD).mean()
+    tr = pd.concat([
+        df_entry["high"] - df_entry["low"],
+        (df_entry["high"] - df_entry["close"].shift()).abs(),
+        (df_entry["low"] - df_entry["close"].shift()).abs(),
+    ], axis=1).max(axis=1)
+    atr = tr.ewm(span=cfg.ATR_PERIOD, adjust=False).mean()
+    braking, strength = _check_braking_volume(df_entry, structure.trend, vol_ma, atr)
+    result.braking_volume = braking
+    result.braking_strength = strength
+    score = 0.0
+    score += fib_score
+    if swept:
+        score += 25.0
+    if structure.a_equals_c:
+        score += 20.0
+    if braking:
+        score += strength * 20.0
+    result.score = min(100.0, round(score, 1))
+    other = sum([swept, structure.a_equals_c, braking])
+    standard_complete = (fibreached and other >= 1) or (other >= 3)
+    result.complete = standard_complete  # уточним после ltf
+
+    # --- 5m reversal check ---
+    ltf_window = 5
+    if len(df_entry) >= ltf_window + 1:
+        ltf_bars   = df_entry.iloc[-ltf_window:]
+        opens_ltf  = ltf_bars["open"].values
+        closes_ltf = ltf_bars["close"].values
+        if structure.trend == "up":
+            bars_in_dir = int((closes_ltf > opens_ltf).sum())
+            net_move    = float(closes_ltf[-1] - opens_ltf[0])
+        else:
+            bars_in_dir = int((closes_ltf < opens_ltf).sum())
+            net_move    = float(opens_ltf[0] - closes_ltf[-1])
+        bars_ratio      = bars_in_dir / ltf_window
+        ltf_reversal_ok = net_move > 0 and bars_in_dir >= 3
+    else:
+        bars_in_dir     = 0
+        net_move        = 0.0
+        bars_ratio      = 0.0
+        ltf_reversal_ok = False
+
+    # Standard path: fibreached + подтверждение + LTF разворот
+    # Aggressive path: shallow (0.236/0.382) + sweep + LTF разворот
+    shallow_complete = (
+        fibvalid
+        and closest_level <= 0.382
+        and swept
+        and ltf_reversal_ok
+    )
+    result.complete = (standard_complete and ltf_reversal_ok) or shallow_complete
+
+    result.details = {
+        "retracement": round(retracement, 3),
+        "fib_level": fiblevel,
+        "fib_valid": fibvalid,
+        "liquidity_swept": swept,
+        "a_equals_c": structure.a_equals_c,
+        "braking_volume": braking,
+        "braking_strength": round(strength, 2),
+        "score": result.score,
+        "current_price": curprice,
+        "ltf_reversal_ok": ltf_reversal_ok,
+        "ltf_bars_in_dir": bars_in_dir,
+        "ltf_bars_ratio": round(bars_ratio, 2),
+        "ltf_net_move": round(net_move, 6),
+    }
+    return result
+
+
+============================================================
+FILE: impulse_detector.py
+============================================================
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+
+import numpy as np
+import pandas as pd
+
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
+import config as cfg
+from wave_analyzer import WaveStructure
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ImpulseSignal:
+    found: bool = False
+    impulse_start: float = 0.0
+    impulse_end: float = 0.0
+    impulse_size: float = 0.0
+    comparable: bool = False
+    bar_index: int = 0
+    start_index: int = 0
+    bars_used: int = 0
+    breakout: bool = False
+
+
+@dataclass
+class EntrySetup:
+    valid: bool = False
+    entry_price: float = 0.0
+    stop_loss: float = 0.0
+    cancel_level: float = 0.0
+    tp1: float = 0.0
+    tp2: float = 0.0
+    tp3: float = 0.0
+    rr_ratio: float = 0.0
+    direction: str = ""
+    atr: float = 0.0
+    entry_zone_low: float = 0.0
+    entry_zone_high: float = 0.0
+
+
+def calc_atr(df: pd.DataFrame) -> pd.Series:
+    h, l, c = df["high"], df["low"], df["close"]
+    tr = pd.concat([(h - l), (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)
+    return tr.ewm(span=cfg.ATR_PERIOD, adjust=False).mean()
+
+
+def check_impulse_comparable(
+    df: pd.DataFrame,
+    bar_index: int,
+    current_size: float,
+    direction: str,
+    atr: pd.Series,
+    lookback: int = 24,
+) -> bool:
+    start = max(1, bar_index - lookback)
+    prev_impulses = []
+    for i in range(start, bar_index):
+        o = float(df["open"].iloc[i])
+        c = float(df["close"].iloc[i])
+        h = float(df["high"].iloc[i])
+        l = float(df["low"].iloc[i])
+        rng = h - l
+        if rng <= 0:
+            continue
+        body = abs(c - o)
+        cur_atr = float(atr.iloc[i]) if not pd.isna(atr.iloc[i]) else 0.0
+        if cur_atr <= 0:
+            continue
+        move_atr = body / cur_atr
+        body_ratio = body / rng
+        if direction == "up" and c > o and body_ratio >= 0.6 and move_atr >= cfg.IMPULSE_MIN_ATR * 0.8:
+            prev_impulses.append(move_atr)
+        elif direction == "down" and c < o and body_ratio >= 0.6 and move_atr >= cfg.IMPULSE_MIN_ATR * 0.8:
+            prev_impulses.append(move_atr)
+    if not prev_impulses:
+        return True
+    avg_prev = float(np.mean(prev_impulses))
+    if avg_prev <= 0:
+        return True
+    ratio = current_size / avg_prev
+    return (0.7 - cfg.IMPULSE_EQUALITY_TOL * 0.25) <= ratio <= (1.3 + cfg.IMPULSE_EQUALITY_TOL)
+
+
+def detect_first_impulse(df_entry: pd.DataFrame, structure: WaveStructure) -> ImpulseSignal:
+    result = ImpulseSignal()
+    if len(df_entry) < 40:
+        return result
+
+    atr = calc_atr(df_entry)
+    cur_atr = float(atr.iloc[-1])
+    if cur_atr <= 0:
+        return result
+
+    direction = structure.trend
+    start_scan = max(1, len(df_entry) - (cfg.IMPULSE_MAX_AGE_BARS + cfg.IMPULSE_MAX_BARS + 4))
+    if structure.wave_c is not None:
+        later = df_entry.index.searchsorted(structure.wave_c.timestamp)
+        start_scan = max(start_scan, int(later))
+
+    best = None
+    highs = df_entry["high"].to_numpy(dtype=float)
+    lows = df_entry["low"].to_numpy(dtype=float)
+    opens = df_entry["open"].to_numpy(dtype=float)
+    closes = df_entry["close"].to_numpy(dtype=float)
+
+    search_from = max(start_scan + 1, len(df_entry) - cfg.IMPULSE_MAX_AGE_BARS - 1)
+    for end in range(search_from, len(df_entry)):
+        for bars_used in range(cfg.IMPULSE_MIN_BARS, cfg.IMPULSE_MAX_BARS + 1):
+            start = end - bars_used + 1
+            if start < start_scan:
+                continue
+
+            start_price = float(opens[start])
+            end_price = float(closes[end])
+            hi = float(highs[start:end + 1].max())
+            lo = float(lows[start:end + 1].min())
+            move = end_price - start_price
+            move_abs = abs(move)
+            if move_abs <= 0:
+                continue
+            if direction == "up" and move <= 0:
+                continue
+            if direction == "down" and move >= 0:
+                continue
+
+            window_atr = float(np.nanmean(atr.iloc[start:end + 1]))
+            if window_atr <= 0:
+                continue
+            move_atr = move_abs / window_atr
+            if move_atr < cfg.IMPULSE_MIN_ATR:
+                continue
+
+            range_total = hi - lo
+            if range_total <= 0:
+                continue
+            bodies = np.abs(closes[start:end + 1] - opens[start:end + 1])
+            body_strength = float(bodies.sum() / range_total)
+            if body_strength < 0.65:
+                continue
+
+            if direction == "up":
+                worst_pullback = max(0.0, (hi - end_price) / move_abs)
+                breakout_ref = float(df_entry["high"].iloc[max(0, start - cfg.IMPULSE_BREAKOUT_LOOKBACK):start].max()) if start > 0 else hi
+                breakout = hi > breakout_ref
+            else:
+                worst_pullback = max(0.0, (end_price - lo) / move_abs)
+                breakout_ref = float(df_entry["low"].iloc[max(0, start - cfg.IMPULSE_BREAKOUT_LOOKBACK):start].min()) if start > 0 else lo
+                breakout = lo < breakout_ref
+
+            if worst_pullback > cfg.IMPULSE_PULLBACK_MAX:
+                continue
+            # breakout — бонус к score, не hard requirement
+            # (для shallow correction ltf_reversal уже подтвердил разворот)
+
+            comparable = check_impulse_comparable(df_entry, end, move_atr, direction, atr)
+            score = move_atr + body_strength + (0.35 if comparable else 0.0) + (0.35 if breakout else 0.0)
+            candidate = (score, start_price, end_price, move_atr, comparable, end, start, bars_used, breakout)
+            if best is None or score > best[0]:
+                best = candidate
+
+    if best is None:
+        return result
+
+    _, start_price, end_price, move_atr, comparable, end, start, bars_used, breakout = best
+    result.found = True
+    result.impulse_start = round(start_price, 6)
+    result.impulse_end = round(end_price, 6)
+    result.impulse_size = round(move_atr, 3)
+    result.comparable = comparable
+    result.bar_index = end
+    result.start_index = start
+    result.bars_used = bars_used
+    result.breakout = breakout
+    return result
+
+
+def calculate_entry(df_entry: pd.DataFrame, structure: WaveStructure, impulse: ImpulseSignal) -> EntrySetup:
+    setup = EntrySetup()
+    if not impulse.found:
+        return setup
+    if structure.impulse_start is None or structure.impulse_end is None:
+        return setup
+
+    atr = calc_atr(df_entry)
+    cur_atr = float(atr.iloc[-1])
+    if cur_atr <= 0:
+        return setup
+
+    direction = structure.trend
+    imp_start = impulse.impulse_start
+    imp_end = impulse.impulse_end
+    imp_size = abs(imp_end - imp_start)
+    if imp_size <= 0:
+        return setup
+
+    if direction == "up":
+        zone_high = imp_end - imp_size * cfg.ENTRY_FIB_LOW
+        zone_low = imp_end - imp_size * cfg.ENTRY_FIB_HIGH
+        entry_price = (zone_low + zone_high) / 2
+        corr_low = structure.wave_c.price if structure.wave_c is not None else float(df_entry["low"].iloc[-20:].min())
+        raw_stop = corr_low - cur_atr * 0.35 * cfg.SL_ATR_MULT
+        min_stop = entry_price - cur_atr * cfg.SL_MIN_ATR_MULT
+        stop_loss = min(raw_stop, min_stop)
+        cancel_level = min(structure.impulse_start.price, imp_start)
+        # wave1_size: кэп сверху (HTF волна не больше MAX_RR*ATR),
+        # минимум снизу (достаточно для MIN_RR при TP2_WAVE_MULT)
+        htf_wave = abs(structure.impulse_end.price - structure.impulse_start.price)
+        min_wave = cur_atr * cfg.SL_MIN_ATR_MULT * cfg.MIN_RR / cfg.TP2_WAVE_MULT
+        wave1_size = max(min(htf_wave, cur_atr * cfg.MAX_RR), imp_size, min_wave)
+        tp1 = entry_price + wave1_size * cfg.TP1_WAVE_MULT
+        tp2 = entry_price + wave1_size * cfg.TP2_WAVE_MULT
+        tp3 = structure.spike_level if cfg.TP3_SPIKE_LEVEL and structure.spike_level > tp2 else tp2 * 1.08
+    else:
+        zone_low = imp_end + imp_size * cfg.ENTRY_FIB_LOW
+        zone_high = imp_end + imp_size * cfg.ENTRY_FIB_HIGH
+        entry_price = (zone_low + zone_high) / 2
+        corr_high = structure.wave_c.price if structure.wave_c is not None else float(df_entry["high"].iloc[-20:].max())
+        raw_stop = corr_high + cur_atr * 0.35 * cfg.SL_ATR_MULT
+        min_stop = entry_price + cur_atr * cfg.SL_MIN_ATR_MULT
+        stop_loss = max(raw_stop, min_stop)
+        cancel_level = max(structure.impulse_start.price, imp_start)
+        htf_wave = abs(structure.impulse_start.price - structure.impulse_end.price)
+        min_wave = cur_atr * cfg.SL_MIN_ATR_MULT * cfg.MIN_RR / cfg.TP2_WAVE_MULT
+        wave1_size = max(min(htf_wave, cur_atr * cfg.MAX_RR), imp_size, min_wave)
+        tp1 = entry_price - wave1_size * cfg.TP1_WAVE_MULT
+        tp2 = entry_price - wave1_size * cfg.TP2_WAVE_MULT
+        tp3 = structure.spike_level if cfg.TP3_SPIKE_LEVEL and 0 < structure.spike_level < tp2 else tp2 * 0.92
+
+    risk = abs(entry_price - stop_loss)
+    reward = abs(tp2 - entry_price)
+    rr = reward / risk if risk > 0 else 0.0
+    if rr < cfg.MIN_RR or rr > cfg.MAX_RR:
+        return setup
+
+    setup.valid = True
+    setup.entry_price = round(entry_price, 6)
+    setup.stop_loss = round(stop_loss, 6)
+    setup.cancel_level = round(cancel_level, 6)
+    setup.tp1 = round(tp1, 6)
+    setup.tp2 = round(tp2, 6)
+    setup.tp3 = round(tp3, 6)
+    setup.rr_ratio = round(rr, 2)
+    setup.direction = direction
+    setup.atr = round(cur_atr, 6)
+    setup.entry_zone_low = round(min(zone_low, zone_high), 6)
+    setup.entry_zone_high = round(max(zone_low, zone_high), 6)
+    return setup
+
+
+============================================================
+FILE: signal_engine.py
+============================================================
+from __future__ import annotations
+
+import logging
+import time
+from dataclasses import dataclass, field
+from typing import Dict, List
+
+import pandas as pd
+
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
+import config as cfg
+cfg.validate_runtime_config()
+from wave_analyzer import WaveStructure, CorrectionComplete, is_ranging, analyze_wave_structure, check_correction_complete
+from impulse_detector import ImpulseSignal, EntrySetup, detect_first_impulse, calculate_entry
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class WaveSignal:
+    symbol: str
+    direction: str
+    entry_price: float
+    stop_loss: float
+    cancel_level: float
+    tp1: float
+    tp2: float
+    tp3: float
+    rr_ratio: float
+    score: float
+    label: str
+    session: str
+    timestamp: pd.Timestamp
+    atr: float
+    structure: WaveStructure = field(default_factory=WaveStructure)
+    correction: CorrectionComplete = field(default_factory=CorrectionComplete)
+    impulse: ImpulseSignal = field(default_factory=ImpulseSignal)
+    correction_type_next: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "symbol": self.symbol,
+            "direction": self.direction,
+            "entry_price": self.entry_price,
+            "stop_loss": self.stop_loss,
+            "cancel_level": self.cancel_level,
+            "tp1": self.tp1,
+            "tp2": self.tp2,
+            "tp3": self.tp3,
+            "rr_ratio": self.rr_ratio,
+            "score": self.score,
+            "label": self.label,
+            "session": self.session,
+            "timestamp": str(self.timestamp),
+            "atr": self.atr,
+            "fib_level": self.correction.fib_level,
+            "liquidity_swept": self.correction.liquidity_swept,
+            "a_equals_c": self.correction.a_equals_c,
+            "braking_volume": self.correction.braking_volume,
+            "has_expanding": self.structure.has_expanding,
+            "correction_type": self.structure.correction_type,
+            "correction_type_next": self.correction_type_next,
+        }
+
+
+def score_to_label(score: float) -> str:
+    if score >= 85:
+        return "STRONG"
+    if score >= 70:
+        return "GOOD"
+    if score >= 55:
+        return "WEAK"
+    return "SKIP"
+
+
+def get_session(ts: pd.Timestamp) -> str:
+    hour = ts.hour
+    if 0 <= hour < 8:
+        return "asia"
+    if 8 <= hour < 13:
+        return "london"
+    if 13 <= hour < 16:
+        return "london_newyork_overlap"
+    if 16 <= hour < 22:
+        return "newyork"
+    return "rollover"
+
+
+def predict_next_correction(current_type: str) -> str:
+    if current_type == "sharp":
+        return "flat"
+    if current_type == "flat":
+        return "sharp"
+    return "unknown"
+
+
+_btc_cache: Dict[str, object] = {"df": None, "ts": 0.0}
+
+
+def btc_is_falling() -> bool:
+    try:
+        df_1h = _btc_cache.get("df")
+        if df_1h is None or (time.time() - _btc_cache.get("ts", 0.0)) > 300:
+            return False
+        if len(df_1h) < 2:
+            return False
+        last_close = float(df_1h["close"].iloc[-1])
+        prev_close = float(df_1h["close"].iloc[-2])
+        return ((last_close - prev_close) / prev_close) * 100 < -1.0
+    except Exception:
+        return False
+
+
+def update_btc_cache(data: Dict[str, pd.DataFrame]) -> None:
+    _btc_cache["df"] = data.get(cfg.TF_HTF)
+    _btc_cache["ts"] = time.time()
+
+
+class SignalCooldown:
+    FILE = "logs/cooldown.json"
+
+    def __init__(self):
+        self.history: Dict[str, float] = {}
+        self.structures: Dict[str, float] = {}
+        self.load()
+
+    def can_fire(self, symbol: str, direction: str, impulse_start: float = 0.0) -> bool:
+        key = f"{symbol}:{direction}"
+        time_ok = (time.time() - self.history.get(key, 0.0)) >= cfg.SIGNAL_COOLDOWN_SEC
+        if not time_ok:
+            return False
+        if impulse_start > 0:
+            prev = self.structures.get(key, 0.0)
+            if prev > 0 and abs(impulse_start - prev) / impulse_start < 0.001:
+                return False
+        return True
+
+    def record(self, symbol: str, direction: str, impulse_start: float = 0.0) -> None:
+        key = f"{symbol}:{direction}"
+        self.history[key] = time.time()
+        if impulse_start > 0:
+            self.structures[key] = impulse_start
+        self.save()
+
+    def save(self) -> None:
+        try:
+            import json
+            os.makedirs(os.path.dirname(self.FILE), exist_ok=True)
+            with open(self.FILE, "w", encoding="utf-8") as f:
+                json.dump({"history": self.history, "structures": self.structures}, f)
+        except Exception:
+            pass
+
+    def load(self) -> None:
+        try:
+            import json
+            if os.path.exists(self.FILE):
+                with open(self.FILE, encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict) and "history" in data:
+                    self.history = data.get("history", {})
+                    self.structures = data.get("structures", {})
+                else:
+                    self.history = data
+                    self.structures = {}
+        except Exception:
+            self.history = {}
+            self.structures = {}
+
+
+class WaveSignalEngine:
+    def __init__(self):
+        self.cooldown = SignalCooldown()
+
+    def calculate_final_score(
+        self,
+        correction: CorrectionComplete,
+        impulse: ImpulseSignal,
+        entry: EntrySetup,
+        structure: WaveStructure,
+        df_entry: pd.DataFrame,
+    ) -> float:
+        score = correction.score
+        if impulse.comparable:
+            score += 5.0
+        if impulse.breakout:
+            score += 5.0
+        session = get_session(df_entry.index[-1])
+        if session in cfg.BEST_SESSIONS:
+            score += 10.0
+        elif session in cfg.SKIP_SESSIONS:
+            score *= 0.6
+        if entry.rr_ratio >= 2.5:
+            score += 5.0
+        if impulse.impulse_size >= 1.5:
+            score += 5.0
+        if structure.has_expanding:
+            score -= 15.0
+        if structure.correction_pct > 0.618:
+            score *= 0.85
+        if "rsi" in df_entry.columns:
+            rsi = float(df_entry["rsi"].iloc[-1])
+            if structure.trend == "up" and rsi <= 40:
+                score += 5.0
+            elif structure.trend == "down" and rsi >= 60:
+                score += 5.0
+        return min(100.0, max(0.0, round(score, 1)))
+
+    def process(self, symbol: str, data: Dict[str, pd.DataFrame]) -> List[WaveSignal]:
+        df_entry = data.get(cfg.TF_ENTRY)
+        df_htf = data.get(cfg.TF_HTF)
+        df_trend = data.get(cfg.TF_TREND)
+        if df_entry is None or df_htf is None or df_trend is None:
+            return []
+        if len(df_entry) < 50 or len(df_htf) < 50:
+            return []
+
+        if symbol == "BTCUSDT":
+            update_btc_cache(data)
+
+        ranging, _ = is_ranging(df_htf)
+        if ranging:
+            return []
+
+        structure = analyze_wave_structure(df_htf, df_trend)
+        if structure.trend not in ("up", "down"):
+            return []
+        if structure.impulse_start is None:
+            return []
+        correction = check_correction_complete(df_entry, structure)
+        if not correction.complete:
+            return []
+        if structure.correction_pct > 0.786:
+            return []
+        impulse = detect_first_impulse(df_entry, structure)
+        if not impulse.found:
+            return []
+        bars_since = len(df_entry) - 1 - impulse.bar_index
+        if bars_since > cfg.IMPULSE_MAX_AGE_BARS:
+            return []
+        entry = calculate_entry(df_entry, structure, impulse)
+        if not entry.valid:
+            return []
+        risk = abs(entry.entry_price - entry.stop_loss)
+        if risk < entry.atr * cfg.SL_MIN_ATR_MULT:
+            return []
+        if entry.rr_ratio < cfg.MIN_RR or entry.rr_ratio > cfg.MAX_RR:
+            return []
+        direction_str = "long" if structure.trend == "up" else "short"
+        imp_start_price = structure.impulse_start.price if structure.impulse_start else 0.0
+        if not self.cooldown.can_fire(symbol, direction_str, imp_start_price):
+            return []
+        score = self.calculate_final_score(correction, impulse, entry, structure, df_entry)
+        if score < cfg.MIN_SCORE:
+            return []
+        label = score_to_label(score)
+        if label == "SKIP":
+            return []
+        cur_price = float(df_entry["close"].iloc[-1])
+        if direction_str == "long" and cur_price < entry.cancel_level:
+            return []
+        if direction_str == "short" and cur_price > entry.cancel_level:
+            return []
+        entry_distance_atr = abs(cur_price - entry.entry_price) / entry.atr if entry.atr > 0 else 0.0
+        if entry_distance_atr > cfg.MAX_ENTRY_DISTANCE_ATR:
+            return []
+        if symbol != "BTCUSDT" and direction_str == "long" and btc_is_falling():
+            return []
+        if not volume_confirming(df_entry):
+            return []
+        if structure.correction_type == "unknown" and not structure.has_5waves:
+            return []
+        sig = WaveSignal(
+            symbol=symbol,
+            direction=direction_str,
+            entry_price=entry.entry_price,
+            stop_loss=entry.stop_loss,
+            cancel_level=entry.cancel_level,
+            tp1=entry.tp1,
+            tp2=entry.tp2,
+            tp3=entry.tp3,
+            rr_ratio=entry.rr_ratio,
+            score=score,
+            label=label,
+            session=get_session(df_entry.index[-1]),
+            timestamp=df_entry.index[-1],
+            atr=entry.atr,
+            structure=structure,
+            correction=correction,
+            impulse=impulse,
+            correction_type_next=predict_next_correction(structure.correction_type),
+        )
+        self.cooldown.record(symbol, direction_str, imp_start_price)
+        return [sig]
+
+
+def volume_confirming(df_entry: pd.DataFrame) -> bool:
+    if len(df_entry) < 20:
+        return True
+    vol = df_entry["volume"].iloc[-3:].values
+    vol_ma = float(df_entry["volume"].iloc[-20:].mean())
+    if vol_ma <= 0:
+        return True
+    return sum(1 for v in vol if v >= vol_ma * 0.8) >= 2
+
+
+============================================================
+FILE: telegram_notify.py
+============================================================
+# ============================================================
+#  telegram_notify.py — Telegram уведомления
+# ============================================================
+from __future__ import annotations
+
+import logging
+import time
+from typing import Optional
+
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
+import config as cfg
+from signal_engine import WaveSignal
+
+logger = logging.getLogger(__name__)
+
+_LAST_SEND: float = 0
+
+
+def _proxies() -> Optional[dict]:
+    p = getattr(cfg, "TELEGRAM_PROXY", None)
+    if p:
+        return {"http": p, "https": p}
+    return None
+
+
+def _create_session() -> requests.Session:
+    """Создает сессию с retry логикой"""
+    session = requests.Session()
+    
+    # Настройка retry только для определенных ошибок
+    retry_strategy = Retry(
+        total=2,
+        backoff_factor=1,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["POST"]
+    )
+    
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    
+    return session
+
+
+def _send(text: str) -> bool:
+    global _LAST_SEND
+    
+    # Проверяем, включен ли Telegram
+    if not getattr(cfg, "TELEGRAM_ENABLED", False):
+        return False
+        
+    if not cfg.TELEGRAM_BOT_TOKEN:
+        return False
+
+    elapsed = time.time() - _LAST_SEND
+    if elapsed < 1.0:
+        time.sleep(1.0 - elapsed)
+
+    url = f"https://api.telegram.org/bot{cfg.TELEGRAM_BOT_TOKEN}/sendMessage"
+    
+    proxies = _proxies()
+    
+    # Если используется SOCKS прокси, проверяем наличие PySocks
+    if proxies and any('socks' in str(p).lower() for p in proxies.values()):
+        try:
+            import socks
+        except ImportError:
+            logger.error("SOCKS proxy requires 'PySocks' package. Install: pip install PySocks")
+            return False
+    
+    try:
+        session = _create_session()
+        
+        # Увеличенный таймаут для прокси
+        timeout = 45 if proxies else 10
+        
+        r = session.post(
+            url,
+            json={"chat_id": cfg.TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"},
+            proxies=proxies,
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        _LAST_SEND = time.time()
+        logger.info("✅ Telegram message sent")
+        return True
+        
+    except requests.exceptions.ProxyError as e:
+        logger.error(f"❌ Telegram proxy error: {e}")
+        logger.error("Check TELEGRAM_PROXY in .env or try a different proxy")
+        return False
+        
+    except requests.exceptions.Timeout as e:
+        logger.warning(f"⏱ Telegram timeout: proxy may be slow or blocked")
+        return False
+        
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"❌ Telegram connection error: {e}")
+        logger.error("Check your internet connection or proxy settings")
+        return False
+        
+    except Exception as e:
+        logger.error(f"❌ Telegram error: {e}")
+        return False
+
+
+def send_wave_signal(sig: WaveSignal) -> bool:
+    """Отправляет волновой сигнал с пошаговой инструкцией"""
+
+    direction_emoji = "🟢 LONG" if sig.direction == "long" else "🔴 SHORT"
+
+    # Оценка качества
+    if sig.score >= 85:
+        quality = "🔥🔥🔥 ОТЛИЧНЫЙ"
+        confidence = "95%"
+        action = "✅ ВХОДИТЬ СЕЙЧАС"
+        size_pct = "100%"
+        when = "⚡ СЕЙЧАС! Не жди, сигнал отличный"
+    elif sig.score >= 70:
+        quality = "🔥🔥 ХОРОШИЙ"
+        confidence = "80%"
+        action = "✅ ВХОДИТЬ"
+        size_pct = "100%"
+        when = "✅ Можно входить сразу"
+    elif sig.score >= 55:
+        quality = "✅ СРЕДНИЙ"
+        confidence = "65%"
+        action = "⚠️ ОСТОРОЖНО"
+        size_pct = "70%"
+        when = "⏳ Подожди 1-2 минуты, посмотри движение"
+    else:
+        quality = "⚠️ СЛАБЫЙ"
+        confidence = "50%"
+        action = "⚠️ ОСТОРОЖНО — МАЛЫЙ РАЗМЕР"
+        size_pct = "50%"
+        when = "⏳ Подожди 3-5 минут, убедись что цена идет в нужную сторону"
+
+    # Детали коррекции
+    fib_str     = f"{sig.correction.fib_level:.1%}" if sig.correction.fib_level else "—"
+    swept_str   = "✅" if sig.correction.liquidity_swept else "❌"
+    ac_str      = "✅" if sig.correction.a_equals_c else "❌"
+    braking_str = f"✅ {sig.correction.braking_strength:.0%}" if sig.correction.braking_volume else "❌"
+
+    # Тип следующей коррекции
+    next_corr = {
+        "sharp": "резкая (V-образная)",
+        "flat":  "боковая (флаг)",
+    }.get(sig.correction_type_next, "неизвестно")
+
+    text = (
+        f"<b>{quality}</b>\n"
+        f"<b>🌊 WAVE {direction_emoji}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"💎 <b>{sig.symbol}</b>\n"
+        f"📊 Скор: <b>{sig.score:.0f}/100</b> (уверенность {confidence})\n"
+        f"⏰ Сессия: {sig.session}\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"<b>🎯 ЧТО ДЕЛАТЬ:</b>\n"
+        f"{action}\n"
+        f"\n"
+        f"<b>📋 ПОШАГОВАЯ ИНСТРУКЦИЯ:</b>\n"
+        f"\n"
+        f"<b>ШАГ 1:</b> Открой Bybit\n"
+        f"<b>ШАГ 2:</b> Найди пару <code>{sig.symbol}</code>\n"
+        f"<b>ШАГ 3:</b> Выбери направление: <b>{sig.direction.upper()}</b>\n"
+        f"\n"
+        f"<b>ШАГ 4:</b> Установи уровни:\n"
+        f"  🎯 Вход:   <code>{sig.entry_price:.4f}</code>\n"
+        f"  🛑 Стоп:   <code>{sig.stop_loss:.4f}</code>\n"
+        f"  🚫 Отмена: <code>{sig.cancel_level:.4f}</code>\n"
+        f"  ✅ TP1:    <code>{sig.tp1:.4f}</code> (закрой 30%)\n"
+        f"  ✅ TP2:    <code>{sig.tp2:.4f}</code> (закрой 40%)\n"
+        f"  🏆 TP3:    <code>{sig.tp3:.4f}</code> (закрой 30%)\n"
+        f"\n"
+        f"<b>ШАГ 5:</b> Размер позиции:\n"
+        f"  💰 {size_pct} от обычного размера\n"
+        f"  🔧 Плечо: <b>5x</b>\n"
+        f"  📐 R:R = <b>{sig.rr_ratio:.2f}</b>\n"
+        f"\n"
+        f"<b>ШАГ 6:</b> Когда входить:\n"
+        f"  {when}\n"
+        f"\n"
+        f"<b>⚠️ ВАЖНО:</b>\n"
+    )
+
+    if sig.direction == "long":
+        text += (
+            f"  • Если цена упала >0.5% — НЕ входи\n"
+            f"  • Если цена ниже отмены <code>{sig.cancel_level:.4f}</code> — ПРОПУСТИ\n"
+        )
+    else:
+        text += (
+            f"  • Если цена выросла >0.5% — НЕ входи\n"
+            f"  • Если цена выше отмены <code>{sig.cancel_level:.4f}</code> — ПРОПУСТИ\n"
+        )
+
+    text += (
+        f"  • Обязательно ставь стоп-лосс!\n"
+        f"  • Не увеличивай размер позиции\n"
+        f"\n"
+        f"<b>📊 АНАЛИЗ ВОЛНЫ:</b>\n"
+        f"  📏 Фибо {fib_str}: {'✅' if sig.correction.fib_reached else '❌'}\n"
+        f"  🌊 Ликвидность снята: {swept_str}\n"
+        f"  ⚖️ A = C: {ac_str}\n"
+        f"  🛑 Тормозящий объём: {braking_str}\n"
+    )
+
+    if sig.structure.has_expanding:
+        text += f"  ⚠️ Расширяющая формация!\n"
+
+    text += (
+        f"\n"
+        f"  🔄 След. коррекция: {next_corr}\n"
+        f"⏱ {sig.timestamp.strftime('%H:%M UTC')}"
+    )
+
+    return _send(text)
+
+
+def send_status(msg: str) -> bool:
+    return _send(f"ℹ️ {msg}")
+
+
+def send_error(msg: str) -> bool:
+    return _send(f"🚨 <b>ERROR</b>\n{msg}")
+
+
+def send_daily_report(stats: dict) -> bool:
+    text = (
+        f"📊 <b>Дневной отчёт — WAVE SCANNER</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"📅 {stats.get('date', '—')}\n"
+        f"📡 Сигналов: {stats.get('signals', 0)}\n"
+        f"🔥 STRONG:   {stats.get('strong', 0)}\n"
+        f"✅ GOOD:     {stats.get('good', 0)}\n"
+        f"⚠️ WEAK:     {stats.get('weak', 0)}\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"🔄 Циклов:   {stats.get('cycles', 0)}\n"
+        f"⏱ Время:    {stats.get('uptime', '—')}\n"
+    )
+    return _send(text)
+
+
+============================================================
+FILE: data_fetcher.py
+============================================================
+# ============================================================
+#  data_fetcher.py — Загрузка данных с биржи
+# ============================================================
+from __future__ import annotations
+
+import logging
+from typing import Dict, Optional
+
+import pandas as pd
+
+import time
+import re
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import ccxt
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
+import config as cfg
+
+logger = logging.getLogger(__name__)
+
+_exchange: Optional[Any] = None
+_market_cache: dict[str, str] = {}
+
+
+def normalize_symbol(symbol: str) -> str:
+    symbol = symbol.strip().upper()
+    if "/" in symbol:
+        return symbol
+    m = re.fullmatch(r"([A-Z0-9]+)(USDT|USDC)", symbol)
+    if m:
+        base, quote = m.groups()
+        return f"{base}/{quote}:{quote}"
+    return symbol
+
+
+def _get_exchange() -> Any:
+    global _exchange
+    if _exchange is None:
+        import ccxt
+        _exchange = ccxt.bybit({
+            "enableRateLimit": True,
+            "options": {"defaultType": "linear"},
+        })
+    return _exchange
+
+
+def fetch_ohlcv(symbol: str, timeframe: str, limit: int) -> Optional[pd.DataFrame]:
+    try:
+        ex = _get_exchange()
+        ex_symbol = _market_cache.get(symbol) or normalize_symbol(symbol)
+        _market_cache[symbol] = ex_symbol
+        raw = ex.fetch_ohlcv(ex_symbol, timeframe, limit=limit)
+        if not raw:
+            return None
+        df = pd.DataFrame(raw, columns=["timestamp", "open", "high", "low", "close", "volume"])
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+        df.set_index("timestamp", inplace=True)
+        df = df.astype(float)
+        time.sleep(0.5)  # пауза между запросами (было 0.3 — вызывало Rate Limit)
+        return df
+    except Exception as e:
+        logger.error(f"fetch_ohlcv {symbol} ({_market_cache.get(symbol, normalize_symbol(symbol))}) {timeframe}: {e}")
+        time.sleep(3.0)  # при ошибке ждём дольше
+        return None
+
+
+def fetch_multi_tf(symbol: str) -> Optional[Dict[str, pd.DataFrame]]:
+    data = {}
+    specs = [
+        (cfg.TF_ENTRY,  cfg.CANDLES_ENTRY),
+        (cfg.TF_HTF,    cfg.CANDLES_HTF),
+        (cfg.TF_TREND,  cfg.CANDLES_TREND),
+    ]
+    for tf, limit in specs:
+        df = fetch_ohlcv(symbol, tf, limit)
+        if df is None or len(df) < 30:
+            logger.warning(f"{symbol} {tf}: insufficient data")
+            return None
+        data[tf] = df
+    return data
+
+
+============================================================
+FILE: backtest.py
+============================================================
+from __future__ import annotations
+
+import logging
+import os
+import sys
+import time
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional, Tuple
+
+import ccxt
+import pandas as pd
+
+sys.path.insert(0, os.path.dirname(__file__))
+import config as cfg
+from wave_analyzer import is_ranging, analyze_wave_structure, check_correction_complete
+from impulse_detector import detect_first_impulse, calculate_entry
+from signal_engine import WaveSignalEngine, score_to_label, volume_confirming
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+logger = logging.getLogger("backtest")
+
+BACKTEST_SYMBOLS = cfg.SYMBOLS + cfg.SYMBOLS_EXTENDED[:4]
+DAYS_BACK = 60
+WINDOW_5M = 300
+WINDOW_1H = 180
+WINDOW_4H = 140
+STEP_BARS_5M = 12
+MIN_SCORE_BT = cfg.MIN_SCORE
+RISK_PER_TRADE = cfg.RISK_PER_TRADE_PCT / 100.0
+INITIAL_BALANCE = cfg.INITIAL_BALANCE
+
+
+@dataclass
+class TradeResult:
+    symbol: str
+    direction: str
+    signal_time: pd.Timestamp
+    entry_time: Optional[pd.Timestamp]
+    entry_price: float
+    stop_loss: float
+    tp1: float
+    tp2: float
+    tp3: float
+    rr_ratio: float
+    score: float
+    session: str
+    fib_level: float
+    fib_reached: bool
+    liquidity_swept: bool
+    a_equals_c: bool
+    braking_volume: bool
+    correction_type: str
+    outcome: str = ""
+    exit_price: float = 0.0
+    pnl_r: float = 0.0
+    pnl_pct: float = 0.0
+    bars_held: int = 0
+    fill_bars: int = 0
+
+
+def get_exchange() -> ccxt.Exchange:
+    return ccxt.bybit({"enableRateLimit": True, "options": {"defaultType": "linear"}})
+
+
+def tf_to_ms(tf: str) -> int:
+    units = {"m": 60_000, "h": 3_600_000, "d": 86_400_000}
+    return int(tf[:-1]) * units[tf[-1]]
+
+
+def fetch_full_history(symbol: str, timeframe: str, days: int, exchange: ccxt.Exchange) -> Optional[pd.DataFrame]:
+    limit = 1000
+    tf_ms = tf_to_ms(timeframe)
+    since_ms = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp() * 1000)
+    rows = []
+    while True:
+        try:
+            batch = exchange.fetch_ohlcv(symbol, timeframe, since=since_ms, limit=limit)
+        except Exception as e:
+            logger.error("fetch error %s %s: %s", symbol, timeframe, e)
+            return None
+        if not batch:
+            break
+        rows.extend(batch)
+        if len(batch) < limit:
+            break
+        since_ms = batch[-1][0] + tf_ms
+        time.sleep(0.25)
+    if not rows:
+        return None
+    df = pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close", "volume"])
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+    return df.drop_duplicates(subset=["timestamp"]).set_index("timestamp").sort_index().astype(float)
+
+
+def get_session(ts: pd.Timestamp) -> str:
+    hour = ts.hour
+    if 0 <= hour < 8:
+        return "asia"
+    if 8 <= hour < 13:
+        return "london"
+    if 13 <= hour < 16:
+        return "london_newyork_overlap"
+    if 16 <= hour < 22:
+        return "newyork"
+    return "rollover"
+
+
+def simulate_trade(
+    df_future: pd.DataFrame,
+    direction: str,
+    entry: float,
+    sl: float,
+    tp1: float,
+    tp2: float,
+    tp3: float,
+    entry_wait_bars: int = cfg.BACKTEST_ENTRY_WAIT_BARS,
+    max_bars: int = cfg.BACKTEST_TRADE_MAX_BARS,
+) -> Tuple[str, float, int, int, Optional[pd.Timestamp]]:
+    if len(df_future) == 0:
+        return "no_data", entry, 0, 0, None
+
+    fill_idx = None
+    fill_time = None
+    for i, (ts, row) in enumerate(df_future.head(entry_wait_bars).iterrows()):
+        high = float(row["high"])
+        low = float(row["low"])
+        if low <= entry <= high:
+            fill_idx = i
+            fill_time = ts
+            break
+    if fill_idx is None:
+        return "not_filled", entry, 0, entry_wait_bars, None
+
+    trade_bars = df_future.iloc[fill_idx:fill_idx + max_bars]
+    remaining = 1.0
+    weighted_exit = 0.0
+    tp1_hit = False
+    tp2_hit = False
+    active_sl = sl
+
+    for i, (_, row) in enumerate(trade_bars.iterrows()):
+        high = float(row["high"])
+        low = float(row["low"])
+        close = float(row["close"])
+
+        if direction == "long":
+            if cfg.BACKTEST_CONSERVATIVE_INTRABAR and low <= active_sl:
+                weighted_exit += remaining * active_sl
+                return "sl", weighted_exit, i + 1, fill_idx + 1, fill_time
+            if (not tp1_hit) and high >= tp1:
+                weighted_exit += cfg.TP1_CLOSE_PCT * tp1
+                remaining -= cfg.TP1_CLOSE_PCT
+                tp1_hit = True
+                if cfg.BACKTEST_MOVE_SL_TO_BE_AFTER_TP1:
+                    active_sl = max(active_sl, entry)
+            if tp1_hit and (not tp2_hit) and high >= tp2:
+                weighted_exit += cfg.TP2_CLOSE_PCT * tp2
+                remaining -= cfg.TP2_CLOSE_PCT
+                tp2_hit = True
+            if tp2_hit and high >= tp3:
+                weighted_exit += remaining * tp3
+                return "tp3", weighted_exit, i + 1, fill_idx + 1, fill_time
+            if (not cfg.BACKTEST_CONSERVATIVE_INTRABAR) and low <= active_sl:
+                weighted_exit += remaining * active_sl
+                return "sl", weighted_exit, i + 1, fill_idx + 1, fill_time
+        else:
+            if cfg.BACKTEST_CONSERVATIVE_INTRABAR and high >= active_sl:
+                weighted_exit += remaining * active_sl
+                return "sl", weighted_exit, i + 1, fill_idx + 1, fill_time
+            if (not tp1_hit) and low <= tp1:
+                weighted_exit += cfg.TP1_CLOSE_PCT * tp1
+                remaining -= cfg.TP1_CLOSE_PCT
+                tp1_hit = True
+                if cfg.BACKTEST_MOVE_SL_TO_BE_AFTER_TP1:
+                    active_sl = min(active_sl, entry)
+            if tp1_hit and (not tp2_hit) and low <= tp2:
+                weighted_exit += cfg.TP2_CLOSE_PCT * tp2
+                remaining -= cfg.TP2_CLOSE_PCT
+                tp2_hit = True
+            if tp2_hit and low <= tp3:
+                weighted_exit += remaining * tp3
+                return "tp3", weighted_exit, i + 1, fill_idx + 1, fill_time
+            if (not cfg.BACKTEST_CONSERVATIVE_INTRABAR) and high >= active_sl:
+                weighted_exit += remaining * active_sl
+                return "sl", weighted_exit, i + 1, fill_idx + 1, fill_time
+
+        timeout_close = close
+
+    weighted_exit += remaining * timeout_close
+    if tp2_hit:
+        return "tp2", weighted_exit, len(trade_bars), fill_idx + 1, fill_time
+    if tp1_hit:
+        return "tp1", weighted_exit, len(trade_bars), fill_idx + 1, fill_time
+    return "timeout", weighted_exit, len(trade_bars), fill_idx + 1, fill_time
+
+
+def run_backtest_symbol(symbol: str, df_5m: pd.DataFrame, df_1h: pd.DataFrame, df_4h: pd.DataFrame) -> List[TradeResult]:
+    results: List[TradeResult] = []
+    seen: set = set()
+    engine = WaveSignalEngine()
+
+    for step in range(0, len(df_5m) - WINDOW_5M, STEP_BARS_5M):
+        end_5m = step + WINDOW_5M
+        ts_now = df_5m.index[end_5m - 1]
+        df_5m_w = df_5m.iloc[step:end_5m]
+        df_1h_w = df_1h[df_1h.index <= ts_now].tail(WINDOW_1H)
+        df_4h_w = df_4h[df_4h.index <= ts_now].tail(WINDOW_4H)
+        if min(len(df_5m_w), len(df_1h_w), len(df_4h_w)) < 60:
+            continue
+
+        ranging, _ = is_ranging(df_1h_w)
+        if ranging:
+            continue
+
+        structure = analyze_wave_structure(df_1h_w, df_4h_w)
+        if structure.trend not in ("up", "down") or structure.impulse_start is None:
+            continue
+
+        correction = check_correction_complete(df_5m_w, structure)
+        if not correction.complete or structure.correction_pct > 0.786:
+            continue
+
+        impulse = detect_first_impulse(df_5m_w, structure)
+        if not impulse.found:
+            continue
+
+        bars_since = len(df_5m_w) - 1 - impulse.bar_index
+        if bars_since > cfg.IMPULSE_MAX_AGE_BARS:
+            continue
+
+        entry_setup = calculate_entry(df_5m_w, structure, impulse)
+        if not entry_setup.valid:
+            continue
+
+        risk = abs(entry_setup.entry_price - entry_setup.stop_loss)
+        if risk < entry_setup.atr * cfg.SL_MIN_ATR_MULT:
+            continue
+        if entry_setup.rr_ratio < cfg.MIN_RR or entry_setup.rr_ratio > cfg.MAX_RR:
+            continue
+        cur_price = float(df_5m_w["close"].iloc[-1])
+        if structure.trend == "up" and cur_price < entry_setup.cancel_level:
+            continue
+        if structure.trend == "down" and cur_price > entry_setup.cancel_level:
+            continue
+        entry_distance_atr = abs(cur_price - entry_setup.entry_price) / entry_setup.atr if entry_setup.atr > 0 else 0.0
+        if entry_distance_atr > cfg.MAX_ENTRY_DISTANCE_ATR:
+            continue
+        if not volume_confirming(df_5m_w):
+            continue
+        if structure.correction_type == "unknown" and not structure.has_5waves:
+            continue
+
+        score = engine.calculate_final_score(correction, impulse, entry_setup, structure, df_5m_w)
+        if score < MIN_SCORE_BT or score_to_label(score) == "SKIP":
+            continue
+
+        direction = "long" if structure.trend == "up" else "short"
+        dedup_key = f"{symbol}:{direction}:{ts_now.floor('1h')}:{round(entry_setup.entry_price, 4)}"
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+
+        df_future = df_5m.iloc[end_5m:end_5m + max(cfg.BACKTEST_ENTRY_WAIT_BARS + cfg.BACKTEST_TRADE_MAX_BARS + 5, 260)]
+        outcome, exit_price, bars_held, fill_bars, entry_time = simulate_trade(
+            df_future,
+            direction,
+            entry_setup.entry_price,
+            entry_setup.stop_loss,
+            entry_setup.tp1,
+            entry_setup.tp2,
+            entry_setup.tp3,
+        )
+        if outcome == "not_filled":
+            continue
+
+        pnl_r = 0.0
+        if risk > 0:
+            if direction == "long":
+                pnl_r = (exit_price - entry_setup.entry_price) / risk
+            else:
+                pnl_r = (entry_setup.entry_price - exit_price) / risk
+        pnl_pct = pnl_r * RISK_PER_TRADE * 100
+
+        results.append(TradeResult(
+            symbol=symbol,
+            direction=direction,
+            signal_time=ts_now,
+            entry_time=entry_time,
+            entry_price=entry_setup.entry_price,
+            stop_loss=entry_setup.stop_loss,
+            tp1=entry_setup.tp1,
+            tp2=entry_setup.tp2,
+            tp3=entry_setup.tp3,
+            rr_ratio=entry_setup.rr_ratio,
+            score=score,
+            session=get_session(ts_now),
+            fib_level=correction.fib_level,
+            fib_reached=correction.fib_reached,
+            liquidity_swept=correction.liquidity_swept,
+            a_equals_c=correction.a_equals_c,
+            braking_volume=correction.braking_volume,
+            correction_type=structure.correction_type,
+            outcome=outcome,
+            exit_price=round(exit_price, 6),
+            pnl_r=round(pnl_r, 3),
+            pnl_pct=round(pnl_pct, 4),
+            bars_held=bars_held,
+            fill_bars=fill_bars,
+        ))
+    return results
+
+
+============================================================
+FILE: logger.py
+============================================================
+# ============================================================
+#  logger.py — Логирование сигналов в CSV
+# ============================================================
+from __future__ import annotations
+
+import csv
+import json
+import logging
+import logging.handlers
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict
+
+import sys
+sys.path.insert(0, os.path.dirname(__file__))
+import config as cfg
+from signal_engine import WaveSignal
+
+logger = logging.getLogger(__name__)
+
+
+def setup_logging() -> None:
+    Path("logs").mkdir(exist_ok=True)
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
+    root = logging.getLogger()
+    root.setLevel(getattr(logging, cfg.LOG_LEVEL, logging.INFO))
+
+    # Консоль
+    ch = logging.StreamHandler()
+    ch.setFormatter(fmt)
+    root.addHandler(ch)
+
+    # Файл с ротацией
+    fh = logging.handlers.RotatingFileHandler(
+        cfg.LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    )
+    fh.setFormatter(fmt)
+    root.addHandler(fh)
+
+
+def log_signal(sig: WaveSignal) -> None:
+    Path("logs").mkdir(exist_ok=True)
+    file_exists = Path(cfg.SIGNALS_CSV).exists()
+
+    row = {
+        "timestamp":      str(sig.timestamp),
+        "symbol":         sig.symbol,
+        "direction":      sig.direction,
+        "score":          sig.score,
+        "label":          sig.label,
+        "entry_price":    sig.entry_price,
+        "stop_loss":      sig.stop_loss,
+        "cancel_level":   sig.cancel_level,
+        "tp1":            sig.tp1,
+        "tp2":            sig.tp2,
+        "tp3":            sig.tp3,
+        "rr_ratio":       sig.rr_ratio,
+        "session":        sig.session,
+        "fib_level":      sig.correction.fib_level,
+        "fib_reached":    sig.correction.fib_reached,
+        "liquidity_swept": sig.correction.liquidity_swept,
+        "a_equals_c":     sig.correction.a_equals_c,
+        "braking_volume": sig.correction.braking_volume,
+        "braking_strength": sig.correction.braking_strength,
+        "has_expanding":  sig.structure.has_expanding,
+        "correction_type": sig.structure.correction_type,
+        "next_correction": sig.correction_type_next,
+        "atr":            sig.atr,
+    }
+
+    with open(cfg.SIGNALS_CSV, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=row.keys())
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(row)
+
+
+
