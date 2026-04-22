@@ -140,13 +140,27 @@ SCAN_INTERVAL_SEC = _env_int("SCAN_INTERVAL_SEC", 90)
 SCAN_WORKERS = _env_int("SCAN_WORKERS", 2)
 EXTENDED_SYMBOLS_LIMIT = _env_int("EXTENDED_SYMBOLS_LIMIT", 5)
 SIGNAL_COOLDOWN_SEC = _env_int("SIGNAL_COOLDOWN_SEC", 3600)
-# Reverted from 78 to 66 (2026-04-22): the 78 threshold was never actually
-# validated — the walk-forward run that we initially read as "proof" was
-# executed with .env overrides forcing MIN_SCORE=60, so PR #2's default of 78
-# was never exercised. A later re-run with 78 collapsed the sample to ~15
-# trades across both windows, which is statistical noise (PF 0.32 / 0.83).
-# Keeping env-overridable so individual users can still experiment.
-MIN_SCORE = _env_float("MIN_SCORE", 66.0)
+# MIN_SCORE (2026-04-22, iter 3): raised 66 → 73.
+# Previous history: was 78 in PR #2 (unvalidated, sample collapsed), then
+# reverted to 66 in PR #5 (pre-PR#2 default). Now raised to 73 based on
+# per-window score-band analysis of the 80-trade PR #8 snapshot.
+#
+# W1 (bearish regime) score-band breakdown:
+#   60–66: 20 trades, WR 20%,  total −15.68R  ← main drag
+#   66–70:  4 trades, WR 50%,  total  −0.63R
+#   70–73:  4 trades, WR 50%,  total  −1.05R
+#   73–85: 11 trades, WR 55%,  total  −0.03R  (near-neutral)
+# Raising MIN_SCORE to 73 surgically removes 28 W1 trades that contributed
+# essentially the entire W1 drawdown, keeping the 11 trades that already
+# tread water on their own.
+#
+# Trade-off: sample size shrinks. Estimated post-filter combined n in the
+# 30–40 range, already at the statistical-significance boundary for a
+# 60-day period. Further filter tightening would require extending
+# DAYS_BACK beyond 60 to keep sample meaningful.
+# Env-overridable; MIN_SCORE=60 or 66 reproduces earlier baselines for
+# A/B bisection.
+MIN_SCORE = _env_float("MIN_SCORE", 73.0)
 
 # MAX_SCORE (2026-04-22) — caps the TOP of the accepted score band.
 # Trade-level diagnostic on the deterministic 103-trade snapshot showed that
