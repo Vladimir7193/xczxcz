@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 def setup_logging() -> None:
-    Path("logs").mkdir(exist_ok=True)
+    Path(cfg.LOG_FILE).parent.mkdir(parents=True, exist_ok=True)
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
     root = logging.getLogger()
@@ -45,7 +45,7 @@ def setup_logging() -> None:
 
 
 def log_signal(sig: WaveSignal) -> None:
-    Path("logs").mkdir(exist_ok=True)
+    Path(cfg.SIGNALS_CSV).parent.mkdir(parents=True, exist_ok=True)
     file_exists = Path(cfg.SIGNALS_CSV).exists()
 
     row = {

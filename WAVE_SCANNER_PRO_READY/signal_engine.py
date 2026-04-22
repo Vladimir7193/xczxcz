@@ -10,11 +10,13 @@ from typing import Dict, List
 import pandas as pd
 
 import sys, os
+from pathlib import Path
 sys.path.insert(0, os.path.dirname(__file__))
 import config as cfg
-cfg.validate_runtime_config()
 from wave_analyzer import WaveStructure, CorrectionComplete, is_ranging, analyze_wave_structure, check_correction_complete
 from impulse_detector import ImpulseSignal, EntrySetup, detect_first_impulse, calculate_entry
+
+_MODULE_DIR = Path(__file__).resolve().parent
 
 logger = logging.getLogger(__name__)
 
@@ -98,12 +100,15 @@ def predict_next_correction(current_type: str) -> str:
 
 
 _btc_cache: Dict[str, object] = {"df": None, "ts": 0.0}
+_btc_cache_lock = Lock()
 
 
 def btc_is_falling() -> bool:
     try:
-        df_1h = _btc_cache.get("df")
-        if df_1h is None or (time.time() - _btc_cache.get("ts", 0.0)) > 300:
+        with _btc_cache_lock:
+            df_1h = _btc_cache.get("df")
+            ts = float(_btc_cache.get("ts", 0.0) or 0.0)
+        if df_1h is None or (time.time() - ts) > 300:
             return False
         lookback = max(2, int(cfg.BTC_FILTER_LOOKBACK_BARS))
         if len(df_1h) < lookback + 2:
@@ -125,58 +130,75 @@ def btc_is_falling() -> bool:
 
 
 def update_btc_cache(data: Dict[str, pd.DataFrame]) -> None:
-    _btc_cache["df"] = data.get(cfg.TF_HTF)
-    _btc_cache["ts"] = time.time()
+    with _btc_cache_lock:
+        _btc_cache["df"] = data.get(cfg.TF_HTF)
+        _btc_cache["ts"] = time.time()
 
 
 class SignalCooldown:
-    FILE = "logs/cooldown.json"
+    FILE = str(_MODULE_DIR / "logs" / "cooldown.json")
 
     def __init__(self):
         self.history: Dict[str, float] = {}
         self.structures: Dict[str, float] = {}
+        self._lock = Lock()
         self.load()
 
     def can_fire(self, symbol: str, direction: str, impulse_start: float = 0.0) -> bool:
         key = f"{symbol}:{direction}"
-        time_ok = (time.time() - self.history.get(key, 0.0)) >= cfg.SIGNAL_COOLDOWN_SEC
-        if not time_ok:
-            return False
-        if impulse_start > 0:
-            prev = self.structures.get(key, 0.0)
-            if prev > 0 and abs(impulse_start - prev) / impulse_start < 0.001:
+        with self._lock:
+            time_ok = (time.time() - self.history.get(key, 0.0)) >= cfg.SIGNAL_COOLDOWN_SEC
+            if not time_ok:
                 return False
+            if impulse_start > 0:
+                prev = self.structures.get(key, 0.0)
+                if prev > 0 and abs(impulse_start - prev) / impulse_start < 0.001:
+                    return False
         return True
 
     def record(self, symbol: str, direction: str, impulse_start: float = 0.0) -> None:
         key = f"{symbol}:{direction}"
-        self.history[key] = time.time()
-        if impulse_start > 0:
-            self.structures[key] = impulse_start
+        with self._lock:
+            self.history[key] = time.time()
+            if impulse_start > 0:
+                self.structures[key] = impulse_start
         self.save()
 
     def save(self) -> None:
+        import json
         try:
-            import json
             os.makedirs(os.path.dirname(self.FILE), exist_ok=True)
-            with open(self.FILE, "w", encoding="utf-8") as f:
-                json.dump({"history": self.history, "structures": self.structures}, f)
-        except Exception:
-            pass
+            with self._lock:
+                payload = {"history": dict(self.history), "structures": dict(self.structures)}
+            tmp_path = self.FILE + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f)
+            os.replace(tmp_path, self.FILE)
+        except OSError as e:
+            logger.warning(f"SignalCooldown.save failed: {e}")
+        except Exception as e:
+            logger.error(f"SignalCooldown.save unexpected error: {e}", exc_info=True)
 
     def load(self) -> None:
+        import json
+        if not os.path.exists(self.FILE):
+            return
         try:
-            import json
-            if os.path.exists(self.FILE):
-                with open(self.FILE, encoding="utf-8") as f:
-                    data = json.load(f)
-                if isinstance(data, dict) and "history" in data:
-                    self.history = data.get("history", {})
-                    self.structures = data.get("structures", {})
-                else:
-                    self.history = data
-                    self.structures = {}
-        except Exception:
+            with open(self.FILE, encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and "history" in data:
+                self.history = data.get("history", {}) or {}
+                self.structures = data.get("structures", {}) or {}
+            elif isinstance(data, dict):
+                # legacy flat format: {key: ts}
+                self.history = data
+                self.structures = {}
+            else:
+                logger.warning("SignalCooldown.load: unexpected format, resetting")
+                self.history = {}
+                self.structures = {}
+        except (OSError, ValueError) as e:
+            logger.warning(f"SignalCooldown.load failed ({e}), starting with empty state")
             self.history = {}
             self.structures = {}
 

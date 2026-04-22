@@ -112,9 +112,11 @@ def find_pivots(df: pd.DataFrame, window: int | None = None) -> Tuple[List[WaveP
     if len(df) >= w + 2:
         recent_high = float(df["high"].iloc[-(cfg.STRICT_LAST_PIVOT_BARS + 1):].max())
         recent_low = float(df["low"].iloc[-(cfg.STRICT_LAST_PIVOT_BARS + 1):].min())
-        if float(df["high"].iloc[last_idx]) >= recent_high:
+        last_high_already = highs and highs[-1].index == last_idx
+        last_low_already = lows and lows[-1].index == last_idx
+        if not last_high_already and float(df["high"].iloc[last_idx]) >= recent_high:
             highs.append(WavePoint(last_idx, float(df["high"].iloc[last_idx]), df.index[last_idx], True))
-        if float(df["low"].iloc[last_idx]) <= recent_low:
+        if not last_low_already and float(df["low"].iloc[last_idx]) <= recent_low:
             lows.append(WavePoint(last_idx, float(df["low"].iloc[last_idx]), df.index[last_idx], False))
     return highs, lows
 

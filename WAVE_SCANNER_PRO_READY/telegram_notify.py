@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Optional
 
@@ -18,7 +19,9 @@ from signal_engine import WaveSignal
 
 logger = logging.getLogger(__name__)
 
-_LAST_SEND: float = 0
+_send_lock = threading.Lock()
+_last_send: float = 0.0
+_session: Optional[requests.Session] = None
 
 
 def _proxies() -> Optional[dict]:
@@ -28,86 +31,80 @@ def _proxies() -> Optional[dict]:
     return None
 
 
-def _create_session() -> requests.Session:
-    """Создает сессию с retry логикой"""
+def _get_session() -> requests.Session:
+    """Ленивая модульная сессия с retry; переиспользуется между вызовами."""
+    global _session
+    if _session is not None:
+        return _session
     session = requests.Session()
-    
-    # Настройка retry только для определенных ошибок
     retry_strategy = Retry(
         total=2,
         backoff_factor=1,
         status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["POST"]
+        allowed_methods=["POST"],
     )
-    
     adapter = HTTPAdapter(max_retries=retry_strategy)
     session.mount("http://", adapter)
     session.mount("https://", adapter)
-    
+    _session = session
     return session
 
 
 def _send(text: str) -> bool:
-    global _LAST_SEND
-    
-    # Проверяем, включен ли Telegram
+    global _last_send
+
     if not getattr(cfg, "TELEGRAM_ENABLED", False):
         return False
-        
     if not cfg.TELEGRAM_BOT_TOKEN:
         return False
 
-    elapsed = time.time() - _LAST_SEND
-    if elapsed < 1.0:
-        time.sleep(1.0 - elapsed)
-
-    url = f"https://api.telegram.org/bot{cfg.TELEGRAM_BOT_TOKEN}/sendMessage"
-    
     proxies = _proxies()
-    
+
     # Если используется SOCKS прокси, проверяем наличие PySocks
     if proxies and any('socks' in str(p).lower() for p in proxies.values()):
         try:
-            import socks
+            import socks  # noqa: F401
         except ImportError:
             logger.error("SOCKS proxy requires 'PySocks' package. Install: pip install PySocks")
             return False
-    
-    try:
-        session = _create_session()
-        
-        # Увеличенный таймаут для прокси
-        timeout = 45 if proxies else 10
-        
-        r = session.post(
-            url,
-            json={"chat_id": cfg.TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"},
-            proxies=proxies,
-            timeout=timeout,
-        )
-        r.raise_for_status()
-        _LAST_SEND = time.time()
-        logger.info("✅ Telegram message sent")
-        return True
-        
-    except requests.exceptions.ProxyError as e:
-        logger.error(f"❌ Telegram proxy error: {e}")
-        logger.error("Check TELEGRAM_PROXY in .env or try a different proxy")
-        return False
-        
-    except requests.exceptions.Timeout as e:
-        logger.warning(f"⏱ Telegram timeout: proxy may be slow or blocked")
-        return False
-        
-    except requests.exceptions.ConnectionError as e:
-        logger.error(f"❌ Telegram connection error: {e}")
-        logger.error("Check your internet connection or proxy settings")
-        return False
-        
-    except Exception as e:
-        logger.error(f"❌ Telegram error: {e}")
-        return False
 
+    # Сериализуем отправку и выдерживаем rate-limit 1 сообщение/сек.
+    with _send_lock:
+        elapsed = time.time() - _last_send
+        if elapsed < 1.0:
+            time.sleep(1.0 - elapsed)
+
+        url = f"https://api.telegram.org/bot{cfg.TELEGRAM_BOT_TOKEN}/sendMessage"
+        timeout = 45 if proxies else 10
+
+        try:
+            session = _get_session()
+            r = session.post(
+                url,
+                json={"chat_id": cfg.TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"},
+                proxies=proxies,
+                timeout=timeout,
+            )
+            r.raise_for_status()
+            _last_send = time.time()
+            logger.info("Telegram message sent")
+            return True
+
+        except requests.exceptions.ProxyError as e:
+            logger.error(f"Telegram proxy error: {e}. Check TELEGRAM_PROXY in .env.")
+            return False
+        except requests.exceptions.Timeout:
+            logger.warning("Telegram timeout: proxy may be slow or blocked")
+            return False
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"Telegram connection error: {e}")
+            return False
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Telegram HTTP error: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Telegram error: {e}", exc_info=True)
+            return False
 
 def send_wave_signal(sig: WaveSignal) -> bool:
     """Отправляет волновой сигнал с пошаговой инструкцией"""
