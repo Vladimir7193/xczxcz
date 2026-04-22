@@ -222,7 +222,52 @@ def simulate_trade(
     return "timeout", weighted_exit, len(trade_bars), fill_idx + 1, fill_time
 
 
-def run_backtest_symbol(symbol: str, df_5m: pd.DataFrame, df_1h: pd.DataFrame, df_4h: pd.DataFrame) -> List[TradeResult]:
+def btc_is_falling_at(btc_1h: Optional[pd.DataFrame], ts_now: pd.Timestamp) -> bool:
+    """Historical mirror of ``signal_engine.btc_is_falling``.
+
+    Looks at BTC 1h closes up to and including the bar at ``ts_now`` and
+    returns True iff the live filter would have blocked a long signal at
+    that moment.
+
+    Identical parameterisation to the live code (drop %, candle losses,
+    EMA bias) so that backtest-reported PF matches what the scanner will
+    actually execute post-merge. Returns False on any data shortfall —
+    consistent with live behaviour where a missing BTC cache simply
+    disables the filter rather than forcing a rejection.
+    """
+    if btc_1h is None or len(btc_1h) == 0:
+        return False
+    try:
+        closes = btc_1h.loc[:ts_now, "close"].astype(float)
+        lookback = max(2, int(cfg.BTC_FILTER_LOOKBACK_BARS))
+        if len(closes) < lookback + 2:
+            return False
+        last_close = float(closes.iloc[-1])
+        base_close = float(closes.iloc[-1 - lookback])
+        if base_close <= 0:
+            return False
+        drop_pct = ((last_close - base_close) / base_close) * 100.0
+        candle_losses = int((closes.diff().iloc[-lookback:] < 0).sum())
+        below_ema = True
+        if cfg.BTC_FILTER_REQUIRE_BELOW_EMA:
+            ema = closes.ewm(span=cfg.BTC_FILTER_EMA_PERIOD, adjust=False).mean()
+            below_ema = last_close < float(ema.iloc[-1])
+        return (
+            drop_pct <= -abs(cfg.BTC_FILTER_DROP_PCT)
+            and candle_losses >= max(2, lookback - 1)
+            and below_ema
+        )
+    except Exception:
+        return False
+
+
+def run_backtest_symbol(
+    symbol: str,
+    df_5m: pd.DataFrame,
+    df_1h: pd.DataFrame,
+    df_4h: pd.DataFrame,
+    btc_1h: Optional[pd.DataFrame] = None,
+) -> List[TradeResult]:
     results: List[TradeResult] = []
     seen: set = set()
     engine = WaveSignalEngine()
@@ -283,6 +328,16 @@ def run_backtest_symbol(symbol: str, df_5m: pd.DataFrame, df_1h: pd.DataFrame, d
             continue
 
         direction = "long" if structure.trend == "up" else "short"
+        # Mirror of signal_engine.py: LONG-only BTC-falling filter. Keeps
+        # backtest semantics identical to live scanner so reported PF
+        # reflects what the bot will actually execute.
+        if (
+            cfg.BTC_FILTER_ENABLED
+            and symbol != "BTCUSDT"
+            and direction == "long"
+            and btc_is_falling_at(btc_1h, ts_now)
+        ):
+            continue
         dedup_key = f"{symbol}:{direction}:{ts_now.floor('1h')}:{round(entry_setup.entry_price, 4)}"
         if dedup_key in seen:
             continue
@@ -382,17 +437,22 @@ def run_backtest_windows(
     df_1h: pd.DataFrame,
     df_4h: pd.DataFrame,
     n_windows: int,
+    btc_1h: Optional[pd.DataFrame] = None,
 ) -> List[Tuple[str, List[TradeResult]]]:
     """Run ``run_backtest_symbol`` independently on each walk-forward window.
 
     Returns ``[(window_label, trades), ...]`` so the caller can report per-window
     stats. HTF frames are passed in full because the inner loop bounds lookback
     by ``df_1h.index <= ts_now`` already.
+
+    ``btc_1h`` is forwarded to ``run_backtest_symbol`` so the LONG-only
+    BTC-falling filter (mirror of signal_engine) can be evaluated with
+    point-in-time BTC data.
     """
     windows = _slice_5m_windows(df_5m, n_windows)
     out: List[Tuple[str, List[TradeResult]]] = []
     for label, sub_5m in windows:
-        trades = run_backtest_symbol(symbol, sub_5m, df_1h, df_4h)
+        trades = run_backtest_symbol(symbol, sub_5m, df_1h, df_4h, btc_1h=btc_1h)
         out.append((label, trades))
     return out
 
@@ -493,6 +553,29 @@ def main() -> None:
     def _fetch(sym: str, tf: str, d: int) -> Optional[pd.DataFrame]:
         return fetch_full_history(sym, tf, d, exchange)
 
+    # Pre-fetch BTC 1h once for the LONG-only BTC-falling filter (mirror of
+    # signal_engine.py live behaviour). We use DAYS_BACK+10 to match the
+    # existing 1h caches so validation against the existing cache file
+    # succeeds when no refresh is requested. If BTC fetch fails the filter
+    # silently degrades (same as live behaviour when the BTC cache is cold).
+    btc_1h: Optional[pd.DataFrame] = None
+    if cfg.BTC_FILTER_ENABLED:
+        try:
+            btc_1h = load_or_fetch_ohlcv(
+                "BTCUSDT", "1h", DAYS_BACK + 10, _fetch, cache_dir,
+                use_cache=use_cache, refresh=refresh_cache,
+                retries=cfg.BACKTEST_CACHE_FETCH_RETRIES,
+                retry_sleep_sec=cfg.BACKTEST_CACHE_RETRY_SLEEP_SEC,
+            )
+            if btc_1h is None or len(btc_1h) == 0:
+                logger.warning("BTC filter enabled but BTC 1h data missing — filter will be a no-op")
+                btc_1h = None
+            else:
+                logger.info("BTC filter active: %d BTC 1h bars loaded", len(btc_1h))
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.warning("BTC filter fetch failed (%s); continuing without filter", exc)
+            btc_1h = None
+
     # results per window label, preserving insertion order via index
     per_window: List[Tuple[str, List[TradeResult]]] = []
 
@@ -524,7 +607,7 @@ def main() -> None:
             logger.warning("Skipping %s — not enough 5m bars (%d)", symbol, len(df_5m))
             continue
 
-        symbol_windows = run_backtest_windows(symbol, df_5m, df_1h, df_4h, n_windows)
+        symbol_windows = run_backtest_windows(symbol, df_5m, df_1h, df_4h, n_windows, btc_1h=btc_1h)
         for window_idx, (label, trades) in enumerate(symbol_windows):
             # align windows across symbols by index
             if window_idx >= len(per_window):
