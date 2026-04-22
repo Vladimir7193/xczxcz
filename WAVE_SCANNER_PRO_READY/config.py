@@ -140,9 +140,13 @@ SCAN_INTERVAL_SEC = _env_int("SCAN_INTERVAL_SEC", 90)
 SCAN_WORKERS = _env_int("SCAN_WORKERS", 2)
 EXTENDED_SYMBOLS_LIMIT = _env_int("EXTENDED_SYMBOLS_LIMIT", 5)
 SIGNAL_COOLDOWN_SEC = _env_int("SIGNAL_COOLDOWN_SEC", 3600)
-# MIN_SCORE raised from 66 to 78 — at 78 the backtest keeps only the trades
-# whose score band (>=78) had the highest PF on the tested window.
-MIN_SCORE = _env_float("MIN_SCORE", 78.0)
+# Reverted from 78 to 66 (2026-04-22): the 78 threshold was never actually
+# validated — the walk-forward run that we initially read as "proof" was
+# executed with .env overrides forcing MIN_SCORE=60, so PR #2's default of 78
+# was never exercised. A later re-run with 78 collapsed the sample to ~15
+# trades across both windows, which is statistical noise (PF 0.32 / 0.83).
+# Keeping env-overridable so individual users can still experiment.
+MIN_SCORE = _env_float("MIN_SCORE", 66.0)
 
 RANGING_ATR_RATIO = _env_float("RANGING_ATR_RATIO", 0.007)
 RANGING_BB_WIDTH_MIN = _env_float("RANGING_BB_WIDTH_MIN", 0.012)
@@ -173,9 +177,10 @@ BRAKING_ABSORPTION = _env_float("BRAKING_ABSORPTION", 0.30)
 
 IMPULSE_MIN_ATR = _env_float("IMPULSE_MIN_ATR", 0.8)
 IMPULSE_EQUALITY_TOL = _env_float("IMPULSE_EQUALITY_TOL", 0.35)
-# Fresher impulse requirement (was 16). 6 bars keeps entries within ~30 min
-# of the LTF impulse end on 5m TF, avoiding stale setups.
-IMPULSE_MAX_AGE_BARS = _env_int("IMPULSE_MAX_AGE_BARS", 6)
+# Reverted from 6 to 16 (2026-04-22): see MIN_SCORE note above — the "fresh
+# impulse" default of 6 was also never validated and contributed to the
+# sample collapse in the re-run. Reopened to the original 16-bar window.
+IMPULSE_MAX_AGE_BARS = _env_int("IMPULSE_MAX_AGE_BARS", 16)
 IMPULSE_MIN_BARS = _env_int("IMPULSE_MIN_BARS", 2)
 IMPULSE_MAX_BARS = _env_int("IMPULSE_MAX_BARS", 4)
 IMPULSE_PULLBACK_MAX = _env_float("IMPULSE_PULLBACK_MAX", 0.45)
@@ -230,9 +235,10 @@ LEVERAGE = _env_int("LEVERAGE", 5)
 BEST_SESSIONS = ["london_newyork_overlap", "newyork", "rollover"]
 SKIP_SESSIONS = ["asia", "london"]
 
-# Volume confirmation now required — adds cheap filter against low-liquidity
-# chop entries. Default flipped from 0 to 1.
-VOLUME_CONFIRMATION_REQUIRED = _env_int("VOLUME_CONFIRMATION_REQUIRED", 1) == 1
+# Reverted from 1 to 0 (2026-04-22): volume-confirm requirement was also
+# never validated against a walk-forward on current filters. Leaving off by
+# default; users who want it can flip via .env.
+VOLUME_CONFIRMATION_REQUIRED = _env_int("VOLUME_CONFIRMATION_REQUIRED", 0) == 1
 BTC_FILTER_ENABLED = _env_int("BTC_FILTER_ENABLED", 1) == 1
 BTC_FILTER_DROP_PCT = _env_float("BTC_FILTER_DROP_PCT", 1.2)
 BTC_FILTER_LOOKBACK_BARS = _env_int("BTC_FILTER_LOOKBACK_BARS", 3)
