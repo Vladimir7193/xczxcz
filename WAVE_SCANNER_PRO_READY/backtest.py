@@ -23,7 +23,22 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(
 logger = logging.getLogger("backtest")
 
 BACKTEST_SYMBOLS = cfg.SYMBOLS + cfg.SYMBOLS_EXTENDED[:4]
-DAYS_BACK = 60
+# DAYS_BACK (2026-04-22): 60 → 120.
+# Reason: every filter PR (#7 MAX_SCORE=85, #8 SL=1.5, #9 MIN_SCORE=73)
+# was derived and measured on the SAME 60-day deterministic cache
+# (Feb 21 – Apr 22 2026). That is in-sample tuning by construction; even
+# walk-forward W1/W2 shares the same generating regime. Extending the
+# period to 120 days (Dec 22 2025 – Apr 22 2026) gives ~60 previously-
+# unseen days (Dec-Jan) as genuine out-of-sample data, while preserving
+# the existing cached Feb-Apr slice as the inner test.
+# Combined with BACKTEST_WALK_FORWARD_WINDOWS=4 this produces four
+# non-overlapping 30-day walk-forward windows; edge is only credible if
+# PF holds in the oldest windows (which were never used to derive any
+# filter default).
+# Env-overridable so a user can bisect (`DAYS_BACK=60` reproduces the
+# prior snapshot exactly, provided the cache dir is wiped or a separate
+# cache dir is used).
+DAYS_BACK = int(os.environ.get("BACKTEST_DAYS_BACK", "120"))
 WINDOW_5M = 300
 WINDOW_1H = 180
 WINDOW_4H = 140
