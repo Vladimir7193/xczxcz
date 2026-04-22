@@ -6,6 +6,7 @@ import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 import ccxt
@@ -13,6 +14,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(__file__))
 import config as cfg
+from backtest_cache import load_or_fetch_ohlcv, describe_cache
 from wave_analyzer import is_ranging, analyze_wave_structure, check_correction_complete
 from impulse_detector import detect_first_impulse, calculate_entry
 from signal_engine import WaveSignalEngine, score_to_label, volume_confirming
@@ -454,19 +456,50 @@ def main() -> None:
     n_windows = max(1, int(cfg.BACKTEST_WALK_FORWARD_WINDOWS))
     exchange = get_exchange()
 
+    # Cache setup — paths resolved relative to this file so running from
+    # any cwd still lands the snapshots in WAVE_SCANNER_PRO_READY/cache/.
+    cache_dir = Path(__file__).resolve().parent / cfg.BACKTEST_CACHE_DIR
+    use_cache = cfg.BACKTEST_USE_CACHE
+    refresh_cache = cfg.BACKTEST_REFRESH_CACHE
+
     logger.info(
         "Starting backtest: %d symbols, %d days back, walk-forward windows=%d",
         len(BACKTEST_SYMBOLS), DAYS_BACK, n_windows,
     )
+    logger.info(
+        "Cache: use=%s refresh=%s dir=%s",
+        use_cache, refresh_cache, cache_dir,
+    )
+    if use_cache and cache_dir.exists():
+        for line in describe_cache(cache_dir).splitlines():
+            logger.info("  %s", line)
+
+    def _fetch(sym: str, tf: str, d: int) -> Optional[pd.DataFrame]:
+        return fetch_full_history(sym, tf, d, exchange)
 
     # results per window label, preserving insertion order via index
     per_window: List[Tuple[str, List[TradeResult]]] = []
 
     for i, symbol in enumerate(BACKTEST_SYMBOLS):
-        logger.info("[%d/%d] Fetching %s ...", i + 1, len(BACKTEST_SYMBOLS), symbol)
-        df_5m = fetch_full_history(symbol, "5m", DAYS_BACK, exchange)
-        df_1h = fetch_full_history(symbol, "1h", DAYS_BACK + 10, exchange)
-        df_4h = fetch_full_history(symbol, "4h", DAYS_BACK + 30, exchange)
+        logger.info("[%d/%d] Loading %s ...", i + 1, len(BACKTEST_SYMBOLS), symbol)
+        df_5m = load_or_fetch_ohlcv(
+            symbol, "5m", DAYS_BACK, _fetch, cache_dir,
+            use_cache=use_cache, refresh=refresh_cache,
+            retries=cfg.BACKTEST_CACHE_FETCH_RETRIES,
+            retry_sleep_sec=cfg.BACKTEST_CACHE_RETRY_SLEEP_SEC,
+        )
+        df_1h = load_or_fetch_ohlcv(
+            symbol, "1h", DAYS_BACK + 10, _fetch, cache_dir,
+            use_cache=use_cache, refresh=refresh_cache,
+            retries=cfg.BACKTEST_CACHE_FETCH_RETRIES,
+            retry_sleep_sec=cfg.BACKTEST_CACHE_RETRY_SLEEP_SEC,
+        )
+        df_4h = load_or_fetch_ohlcv(
+            symbol, "4h", DAYS_BACK + 30, _fetch, cache_dir,
+            use_cache=use_cache, refresh=refresh_cache,
+            retries=cfg.BACKTEST_CACHE_FETCH_RETRIES,
+            retry_sleep_sec=cfg.BACKTEST_CACHE_RETRY_SLEEP_SEC,
+        )
 
         if df_5m is None or df_1h is None or df_4h is None:
             logger.warning("Skipping %s — missing data", symbol)

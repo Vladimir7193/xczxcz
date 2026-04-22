@@ -204,6 +204,19 @@ TP3_SPIKE_LEVEL = _env_int("TP3_SPIKE_LEVEL", 1) == 1
 # whether edge holds out-of-sample.
 BACKTEST_WALK_FORWARD_WINDOWS = _env_int("BACKTEST_WALK_FORWARD_WINDOWS", 1)
 
+# OHLCV cache for backtest reproducibility. Bybit REST can return partial
+# data on a single call (rate-limit trims, transient timeouts), so two
+# consecutive runs of backtest.py can produce wildly different trade
+# counts even on identical parameters. With caching on, the first run
+# fetches+validates completeness and persists a snapshot per
+# symbol/timeframe; subsequent runs read the snapshot byte-for-byte.
+# Set BACKTEST_REFRESH_CACHE=1 to force a re-fetch (e.g. weekly refresh).
+BACKTEST_USE_CACHE = _env_int("BACKTEST_USE_CACHE", 1) == 1
+BACKTEST_REFRESH_CACHE = _env_int("BACKTEST_REFRESH_CACHE", 0) == 1
+BACKTEST_CACHE_DIR = _env_str("BACKTEST_CACHE_DIR", "cache")
+BACKTEST_CACHE_FETCH_RETRIES = _env_int("BACKTEST_CACHE_FETCH_RETRIES", 3)
+BACKTEST_CACHE_RETRY_SLEEP_SEC = _env_float("BACKTEST_CACHE_RETRY_SLEEP_SEC", 2.0)
+
 BACKTEST_ENTRY_WAIT_BARS = _env_int("BACKTEST_ENTRY_WAIT_BARS", 18)
 BACKTEST_TRADE_MAX_BARS = _env_int("BACKTEST_TRADE_MAX_BARS", 220)
 BACKTEST_MOVE_SL_TO_BE_AFTER_TP1 = _env_int("BACKTEST_MOVE_SL_TO_BE_AFTER_TP1", 1) == 1
