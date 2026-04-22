@@ -46,10 +46,38 @@ def _env_int(name: str, default: int) -> int:
 
 
 def validate_runtime_config() -> None:
-    if TELEGRAM_ENABLED and (not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID):
+    """Вызывается из main.py после полной загрузки модуля.
+    Все ссылки на globals (TELEGRAM_ENABLED и т.д.) разрешаются через globals(),
+    потому что функция может быть вызвана до объявления этих констант при
+    некорректном порядке импортов.
+    """
+    g = globals()
+    if g.get("TELEGRAM_ENABLED") and (not g.get("TELEGRAM_BOT_TOKEN") or not g.get("TELEGRAM_CHAT_ID")):
         raise ValueError(
             "TELEGRAM_ENABLED=1, but TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID are not set."
         )
+
+    min_rr = g.get("MIN_RR")
+    max_rr = g.get("MAX_RR")
+    if min_rr is not None and max_rr is not None and min_rr >= max_rr:
+        raise ValueError(f"MIN_RR ({min_rr}) must be < MAX_RR ({max_rr}).")
+
+    fib_low = g.get("ENTRY_FIB_LOW")
+    fib_high = g.get("ENTRY_FIB_HIGH")
+    if fib_low is not None and fib_high is not None and fib_low >= fib_high:
+        raise ValueError(f"ENTRY_FIB_LOW ({fib_low}) must be < ENTRY_FIB_HIGH ({fib_high}).")
+
+    imp_min = g.get("IMPULSE_MIN_BARS")
+    imp_max = g.get("IMPULSE_MAX_BARS")
+    if imp_min is not None and imp_max is not None and imp_min > imp_max:
+        raise ValueError(f"IMPULSE_MIN_BARS ({imp_min}) must be <= IMPULSE_MAX_BARS ({imp_max}).")
+
+    scan = g.get("SCAN_INTERVAL_SEC")
+    if scan is not None and scan <= 0:
+        raise ValueError(f"SCAN_INTERVAL_SEC must be > 0 (got {scan}).")
+
+    if not g.get("SYMBOLS"):
+        raise ValueError("SYMBOLS list is empty.")
 
 
 TELEGRAM_ENABLED = _env_int("TELEGRAM_ENABLED", 0) == 1
@@ -177,6 +205,8 @@ DATA_REQUEST_PAUSE_SEC = _env_float("DATA_REQUEST_PAUSE_SEC", 0.15)
 DATA_RETRY_SLEEP_SEC = _env_float("DATA_RETRY_SLEEP_SEC", 3.0)
 
 LOG_LEVEL = _env_str("LOG_LEVEL", "INFO")
-LOG_FILE = "logs/wave_scanner.log"
-SIGNALS_CSV = "logs/signals.csv"
-TRADES_CSV = "logs/trades.csv"
+
+_LOG_DIR = Path(__file__).resolve().with_name("logs")
+LOG_FILE = str(_LOG_DIR / "wave_scanner.log")
+SIGNALS_CSV = str(_LOG_DIR / "signals.csv")
+TRADES_CSV = str(_LOG_DIR / "trades.csv")

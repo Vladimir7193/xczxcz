@@ -27,7 +27,7 @@ import config as cfg
 cfg.validate_runtime_config()
 from logger import setup_logging, log_signal
 from data_fetcher import fetch_multi_tf
-from signal_engine import WaveSignalEngine, WaveSignal
+from signal_engine import WaveSignalEngine, WaveSignal, update_btc_cache
 from telegram_notify import send_wave_signal, send_status, send_error, send_daily_report
 
 setup_logging()
@@ -128,7 +128,25 @@ def filter_correlated(signals: List[WaveSignal]) -> List[WaveSignal]:
     return filtered
 
 
+def _prefetch_btc() -> None:
+    """Обновляет BTC-кеш синхронно до параллельного сканирования, чтобы BTC-фильтр
+    в signal_engine работал детерминированно для всех символов."""
+    if not cfg.BTC_FILTER_ENABLED:
+        return
+    try:
+        data = fetch_multi_tf("BTCUSDT")
+        if data:
+            update_btc_cache(data)
+        else:
+            logger.warning("BTC prefetch: fetch_multi_tf returned no data; filter will be a no-op this cycle")
+    except Exception as e:
+        logger.error(f"BTC prefetch error: {e}")
+
+
 def run_cycle() -> int:
+    # ── Шаг 0: обновляем BTC-кеш до пула ─────────────────────
+    _prefetch_btc()
+
     # ── Шаг 1: сканируем основные 20 пар ─────────────────────
     logger.info(f"Scanning {len(cfg.SYMBOLS)} main symbols...")
     signals = scan_symbols(cfg.SYMBOLS)
