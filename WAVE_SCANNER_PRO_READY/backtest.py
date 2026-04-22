@@ -158,7 +158,9 @@ def simulate_trade(
                 remaining -= cfg.TP1_CLOSE_PCT
                 tp1_hit = True
                 if cfg.BACKTEST_MOVE_SL_TO_BE_AFTER_TP1:
-                    active_sl = max(active_sl, entry)
+                    risk_abs = abs(entry - sl)
+                    be_lock = entry + cfg.BACKTEST_BE_LOCK_IN_R * risk_abs
+                    active_sl = max(active_sl, be_lock)
             if tp1_hit and (not tp2_hit) and high >= tp2:
                 weighted_exit += cfg.TP2_CLOSE_PCT * tp2
                 remaining -= cfg.TP2_CLOSE_PCT
@@ -178,7 +180,9 @@ def simulate_trade(
                 remaining -= cfg.TP1_CLOSE_PCT
                 tp1_hit = True
                 if cfg.BACKTEST_MOVE_SL_TO_BE_AFTER_TP1:
-                    active_sl = min(active_sl, entry)
+                    risk_abs = abs(sl - entry)
+                    be_lock = entry - cfg.BACKTEST_BE_LOCK_IN_R * risk_abs
+                    active_sl = min(active_sl, be_lock)
             if tp1_hit and (not tp2_hit) and low <= tp2:
                 weighted_exit += cfg.TP2_CLOSE_PCT * tp2
                 remaining -= cfg.TP2_CLOSE_PCT

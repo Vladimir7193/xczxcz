@@ -95,8 +95,11 @@ DATA_EXCHANGE = _env_str("DATA_EXCHANGE", "bybit")
 # Revisit after walk-forward validation on a second window.
 # Full pre-tuning list preserved in SYMBOLS_FULL for reference / rollback.
 SYMBOLS = [
-    "LDOUSDT", "POLUSDT", "SEIUSDT", "MANAUSDT", "TIAUSDT",
-    "OPUSDT", "RUNEUSDT", "ADAUSDT", "GALAUSDT", "STXUSDT",
+    # SEIUSDT removed after walk-forward (combined -2.3R across two windows,
+    # only stable loser in the list). Can be restored if a rolling
+    # walk-forward shows its mean_R turning positive on a later window.
+    "LDOUSDT", "POLUSDT", "MANAUSDT", "TIAUSDT", "OPUSDT",
+    "RUNEUSDT", "ADAUSDT", "GALAUSDT", "STXUSDT",
 ]
 
 SYMBOLS_FULL = [
@@ -199,6 +202,12 @@ BACKTEST_WALK_FORWARD_WINDOWS = _env_int("BACKTEST_WALK_FORWARD_WINDOWS", 1)
 BACKTEST_ENTRY_WAIT_BARS = _env_int("BACKTEST_ENTRY_WAIT_BARS", 18)
 BACKTEST_TRADE_MAX_BARS = _env_int("BACKTEST_TRADE_MAX_BARS", 220)
 BACKTEST_MOVE_SL_TO_BE_AFTER_TP1 = _env_int("BACKTEST_MOVE_SL_TO_BE_AFTER_TP1", 1) == 1
+# After TP1 fills, lock the stop at entry +/- BE_LOCK_IN_R*risk instead of
+# plain break-even. 0.0 = classic break-even (legacy); 0.3 = +0.3R lock-in.
+# Rationale: many post-TP1 trades revert to entry and get stopped at ~0R,
+# consuming commissions. A small positive lock realizes a small guaranteed
+# win on the remaining size without sacrificing TP2/TP3 upside.
+BACKTEST_BE_LOCK_IN_R = _env_float("BACKTEST_BE_LOCK_IN_R", 0.3)
 BACKTEST_TIMEOUT_EXIT_ON_CLOSE = _env_int("BACKTEST_TIMEOUT_EXIT_ON_CLOSE", 1) == 1
 BACKTEST_CONSERVATIVE_INTRABAR = _env_int("BACKTEST_CONSERVATIVE_INTRABAR", 1) == 1
 TP1_CLOSE_PCT = _env_float("TP1_CLOSE_PCT", 0.30)
