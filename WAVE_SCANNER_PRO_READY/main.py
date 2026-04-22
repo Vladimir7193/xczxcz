@@ -181,7 +181,7 @@ def main() -> None:
     logger.info("=" * 60)
     logger.info("  WAVE_SCANNER_PRO v1.0 — Starting")
     logger.info(f"  Symbols: {len(cfg.SYMBOLS)}")
-    logger.info(f"  Min score: {cfg.MIN_SCORE}")
+    logger.info(f"  Score band: {cfg.MIN_SCORE}..{cfg.MAX_SCORE}")
     logger.info(f"  RR range: {cfg.MIN_RR}..{cfg.MAX_RR}")
     logger.info(f"  Max entry distance ATR: {cfg.MAX_ENTRY_DISTANCE_ATR}")
     logger.info(f"  Volume confirm required: {cfg.VOLUME_CONFIRMATION_REQUIRED}")
@@ -192,7 +192,7 @@ def main() -> None:
     send_status(
         f"🌊 WAVE SCANNER PRO запущен\n"
         f"📊 Пар: {len(cfg.SYMBOLS)}\n"
-        f"🎯 Мин. скор: {cfg.MIN_SCORE}\n"
+        f"🎯 Скор: {cfg.MIN_SCORE}..{cfg.MAX_SCORE}\n"
         f"⏱ Интервал: {cfg.SCAN_INTERVAL_SEC}s\n\n"
         f"Стратегия Игоря:\n"
         f"0️⃣ Фильтр боковика\n"

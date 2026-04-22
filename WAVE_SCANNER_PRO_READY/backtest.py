@@ -29,6 +29,7 @@ WINDOW_1H = 180
 WINDOW_4H = 140
 STEP_BARS_5M = 12
 MIN_SCORE_BT = cfg.MIN_SCORE
+MAX_SCORE_BT = cfg.MAX_SCORE
 RISK_PER_TRADE = cfg.RISK_PER_TRADE_PCT / 100.0
 INITIAL_BALANCE = cfg.INITIAL_BALANCE
 
@@ -263,7 +264,7 @@ def run_backtest_symbol(symbol: str, df_5m: pd.DataFrame, df_1h: pd.DataFrame, d
             continue
 
         score = engine.calculate_final_score(correction, impulse, entry_setup, structure, df_5m_w)
-        if score < MIN_SCORE_BT or score_to_label(score) == "SKIP":
+        if score < MIN_SCORE_BT or score > MAX_SCORE_BT or score_to_label(score) == "SKIP":
             continue
 
         direction = "long" if structure.trend == "up" else "short"
