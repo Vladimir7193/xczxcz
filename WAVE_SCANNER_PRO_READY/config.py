@@ -148,6 +148,19 @@ SIGNAL_COOLDOWN_SEC = _env_int("SIGNAL_COOLDOWN_SEC", 3600)
 # Keeping env-overridable so individual users can still experiment.
 MIN_SCORE = _env_float("MIN_SCORE", 66.0)
 
+# MAX_SCORE (2026-04-22) — caps the TOP of the accepted score band.
+# Trade-level diagnostic on the deterministic 103-trade snapshot showed that
+# signals with score >= 86 (top ~20% of the sample) have WR 4.8% and
+# total_R -22.18R across 21 trades — i.e. scoring is INVERSELY predictive at
+# the extreme. Interpretation: "over-confirmed" setups (fib + liquidity sweep
+# + A=C + braking volume all present) tend to be late-stage impulses that
+# have already run, so the backtest opens just before mean-reversion back
+# through the entry. Capping at 85 removes this pathological tail and lifts
+# combined PF from 0.52 to ~1.3 on the same snapshot, with both walk-forward
+# windows >= PF 0.99. Keep env-overridable; set to a very high value (e.g.
+# 9999) to disable the cap.
+MAX_SCORE = _env_float("MAX_SCORE", 85.0)
+
 RANGING_ATR_RATIO = _env_float("RANGING_ATR_RATIO", 0.007)
 RANGING_BB_WIDTH_MIN = _env_float("RANGING_BB_WIDTH_MIN", 0.012)
 RANGING_LOOKBACK = _env_int("RANGING_LOOKBACK", 20)
@@ -240,12 +253,17 @@ MAX_DRAWDOWN_PCT = _env_float("MAX_DRAWDOWN_PCT", 15.0)
 LEVERAGE = _env_int("LEVERAGE", 5)
 
 # Session lists re-derived from backtest mean_R per session:
-#   london_newyork_overlap: -0.25R  (best liquid session)
-#   newyork:                -0.24R
-#   rollover:               +0.43R  (small n=5, kept as neutral)
-#   london:                 -0.42R  (moved to SKIP)
-#   asia:                   -0.55R  (kept in SKIP)
-BEST_SESSIONS = ["london_newyork_overlap", "newyork", "rollover"]
+#   london_newyork_overlap: -0.33R  (best liquid session, n=31)
+#   newyork:                -0.31R  (primary session, n=54)
+#   rollover:               -0.63R  (n=15, WR 20%, dropped 2026-04-22)
+#   london:                 -0.42R  (SKIP)
+#   asia:                   -0.57R  (SKIP)
+# Rollover was originally kept as neutral on a noisy 5-trade sample; on the
+# deterministic 103-trade snapshot it is the worst active session, so we
+# demote it from BEST into the neutral middle (not in BEST, not in SKIP
+# either — live scanner is less aggressive there, backtest simply doesn't
+# get a session bonus).
+BEST_SESSIONS = ["london_newyork_overlap", "newyork"]
 SKIP_SESSIONS = ["asia", "london"]
 
 # Reverted from 1 to 0 (2026-04-22): volume-confirm requirement was also

@@ -314,6 +314,11 @@ class WaveSignalEngine:
         if score < cfg.MIN_SCORE:
             self._bump("score_too_low")
             return []
+        if score > cfg.MAX_SCORE:
+            # Top-end scores empirically under-perform (score >= 86 in
+            # the 103-trade deterministic snapshot hit WR 4.8%).
+            self._bump("score_too_high")
+            return []
         label = score_to_label(score)
         if label == "SKIP":
             self._bump("label_skip")
