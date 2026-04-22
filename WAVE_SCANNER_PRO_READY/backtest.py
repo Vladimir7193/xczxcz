@@ -30,6 +30,11 @@ MIN_SCORE_BT = cfg.MIN_SCORE
 RISK_PER_TRADE = cfg.RISK_PER_TRADE_PCT / 100.0
 INITIAL_BALANCE = cfg.INITIAL_BALANCE
 
+# Realistic trading costs (Bybit linear futures, April 2026 schedule).
+FEE_TAKER_PCT = 0.055 / 100.0
+FEE_MAKER_PCT = 0.02 / 100.0
+SLIPPAGE_PCT = 0.02 / 100.0
+
 
 @dataclass
 class TradeResult:
@@ -274,12 +279,16 @@ def run_backtest_symbol(symbol: str, df_5m: pd.DataFrame, df_1h: pd.DataFrame, d
         if outcome == "not_filled":
             continue
 
+        # Realistic costs: limit-style entry (maker) + taker exit + 2x slippage.
+        entry_cost = entry_setup.entry_price * (FEE_MAKER_PCT + SLIPPAGE_PCT)
+        exit_cost = exit_price * (FEE_TAKER_PCT + SLIPPAGE_PCT)
+        total_fee = entry_cost + exit_cost
         pnl_r = 0.0
         if risk > 0:
             if direction == "long":
-                pnl_r = (exit_price - entry_setup.entry_price) / risk
+                pnl_r = (exit_price - entry_setup.entry_price - total_fee) / risk
             else:
-                pnl_r = (entry_setup.entry_price - exit_price) / risk
+                pnl_r = (entry_setup.entry_price - exit_price - total_fee) / risk
         pnl_pct = pnl_r * RISK_PER_TRADE * 100
 
         results.append(TradeResult(
@@ -309,3 +318,194 @@ def run_backtest_symbol(symbol: str, df_5m: pd.DataFrame, df_1h: pd.DataFrame, d
             fill_bars=fill_bars,
         ))
     return results
+
+
+def _slice_5m_windows(df_5m: pd.DataFrame, n_windows: int) -> List[Tuple[str, pd.DataFrame]]:
+    """Split the 5m frame into ``n_windows`` roughly equal contiguous slices.
+
+    Each slice starts at a bar boundary; HTF frames are NOT sliced because the
+    inner loop pulls lookback history via ``tail(WINDOW_1H/4H)`` anyway.
+    Returns a list of ``(label, df_5m_slice)`` pairs.
+    """
+    n = max(1, int(n_windows))
+    if n == 1 or len(df_5m) <= WINDOW_5M + STEP_BARS_5M:
+        return [("all", df_5m)]
+
+    bars = len(df_5m)
+    # We need each window to contain at least WINDOW_5M + STEP_BARS_5M bars
+    # so that run_backtest_symbol has at least one iteration.
+    min_bars = WINDOW_5M + STEP_BARS_5M * 2
+    if bars // n < min_bars:
+        logger.warning(
+            "Walk-forward: not enough 5m bars (%d) to split into %d windows (min %d each) — falling back to 1 window",
+            bars, n, min_bars,
+        )
+        return [("all", df_5m)]
+
+    chunk = bars // n
+    slices: List[Tuple[str, pd.DataFrame]] = []
+    for i in range(n):
+        start = i * chunk
+        end = (i + 1) * chunk if i < n - 1 else bars
+        sub = df_5m.iloc[start:end]
+        t0 = sub.index[0].strftime("%Y-%m-%d")
+        t1 = sub.index[-1].strftime("%Y-%m-%d")
+        slices.append((f"W{i + 1}({t0}..{t1})", sub))
+    return slices
+
+
+def run_backtest_windows(
+    symbol: str,
+    df_5m: pd.DataFrame,
+    df_1h: pd.DataFrame,
+    df_4h: pd.DataFrame,
+    n_windows: int,
+) -> List[Tuple[str, List[TradeResult]]]:
+    """Run ``run_backtest_symbol`` independently on each walk-forward window.
+
+    Returns ``[(window_label, trades), ...]`` so the caller can report per-window
+    stats. HTF frames are passed in full because the inner loop bounds lookback
+    by ``df_1h.index <= ts_now`` already.
+    """
+    windows = _slice_5m_windows(df_5m, n_windows)
+    out: List[Tuple[str, List[TradeResult]]] = []
+    for label, sub_5m in windows:
+        trades = run_backtest_symbol(symbol, sub_5m, df_1h, df_4h)
+        out.append((label, trades))
+    return out
+
+
+def _stats_block(results: List[TradeResult]) -> dict:
+    """Compute summary stats for a list of trades."""
+    if not results:
+        return {
+            "total": 0, "win_rate": 0.0, "total_r": 0.0,
+            "avg_win_r": 0.0, "avg_loss_r": 0.0,
+            "profit_factor": 0.0, "outcomes": {},
+        }
+    df = pd.DataFrame([vars(r) for r in results])
+    wins = df[df["pnl_r"] > 0]
+    losses = df[df["pnl_r"] <= 0]
+    total = len(df)
+    win_rate = (len(wins) / total * 100) if total else 0.0
+    total_r = float(df["pnl_r"].sum())
+    avg_win_r = float(wins["pnl_r"].mean()) if len(wins) else 0.0
+    avg_loss_r = float(losses["pnl_r"].mean()) if len(losses) else 0.0
+    loss_sum = float(losses["pnl_r"].sum())
+    profit_factor = (float(wins["pnl_r"].sum()) / abs(loss_sum)) if loss_sum != 0 else float("inf")
+    outcomes = df["outcome"].value_counts().to_dict()
+    return {
+        "total": total,
+        "win_rate": win_rate,
+        "total_r": total_r,
+        "avg_win_r": avg_win_r,
+        "avg_loss_r": avg_loss_r,
+        "profit_factor": profit_factor,
+        "outcomes": outcomes,
+    }
+
+
+def print_stats(label: str, results: List[TradeResult]) -> None:
+    """Print a single stats block for a window or the combined run."""
+    s = _stats_block(results)
+    print("\n" + "=" * 60)
+    print(f"           BACKTEST RESULTS — {label}")
+    print("=" * 60)
+    if s["total"] == 0:
+        print("  (no trades)")
+        print("=" * 60)
+        return
+    print(f"  Total trades:    {s['total']}")
+    print(f"  Win rate:        {s['win_rate']:.1f}%")
+    print(f"  Total R:         {s['total_r']:+.2f}R")
+    print(f"  Avg win:         {s['avg_win_r']:+.2f}R")
+    print(f"  Avg loss:        {s['avg_loss_r']:+.2f}R")
+    pf = s["profit_factor"]
+    print(f"  Profit factor:   {pf:.2f}" if pf != float("inf") else "  Profit factor:   inf")
+    print(f"  Outcomes:        {s['outcomes']}")
+    if results:
+        df = pd.DataFrame([vars(r) for r in results])
+        by_session = df.groupby("session")["pnl_r"].agg(["count", "sum", "mean"]).round(3)
+        top_syms = (
+            df.groupby("symbol")["pnl_r"].agg(["count", "sum"])
+            .sort_values("sum", ascending=False).head(10)
+        )
+        print("\n  By session:")
+        print(by_session.to_string())
+        print("\n  Top symbols by PnL (R):")
+        print(top_syms.to_string())
+    print("=" * 60)
+
+
+def _save_results_csv(results: List[TradeResult], path: str) -> None:
+    if not results:
+        return
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    pd.DataFrame([vars(r) for r in results]).to_csv(path, index=False)
+    logger.info("Saved %d trades to %s", len(results), path)
+
+
+def main() -> None:
+    os.makedirs("logs", exist_ok=True)
+    n_windows = max(1, int(cfg.BACKTEST_WALK_FORWARD_WINDOWS))
+    exchange = get_exchange()
+
+    logger.info(
+        "Starting backtest: %d symbols, %d days back, walk-forward windows=%d",
+        len(BACKTEST_SYMBOLS), DAYS_BACK, n_windows,
+    )
+
+    # results per window label, preserving insertion order via index
+    per_window: List[Tuple[str, List[TradeResult]]] = []
+
+    for i, symbol in enumerate(BACKTEST_SYMBOLS):
+        logger.info("[%d/%d] Fetching %s ...", i + 1, len(BACKTEST_SYMBOLS), symbol)
+        df_5m = fetch_full_history(symbol, "5m", DAYS_BACK, exchange)
+        df_1h = fetch_full_history(symbol, "1h", DAYS_BACK + 10, exchange)
+        df_4h = fetch_full_history(symbol, "4h", DAYS_BACK + 30, exchange)
+
+        if df_5m is None or df_1h is None or df_4h is None:
+            logger.warning("Skipping %s — missing data", symbol)
+            continue
+        if len(df_5m) < WINDOW_5M + 50:
+            logger.warning("Skipping %s — not enough 5m bars (%d)", symbol, len(df_5m))
+            continue
+
+        symbol_windows = run_backtest_windows(symbol, df_5m, df_1h, df_4h, n_windows)
+        for window_idx, (label, trades) in enumerate(symbol_windows):
+            # align windows across symbols by index
+            if window_idx >= len(per_window):
+                per_window.append((label, []))
+            # Keep the first encountered label; dates may differ slightly across symbols
+            # but index alignment is what matters for reporting.
+            per_window[window_idx][1].extend(trades)
+        logger.info("  %s: %d signals across %d windows",
+                    symbol, sum(len(t) for _, t in symbol_windows), len(symbol_windows))
+
+    combined: List[TradeResult] = [t for _, trades in per_window for t in trades]
+
+    if n_windows > 1:
+        for label, trades in per_window:
+            print_stats(label, trades)
+        print_stats("COMBINED (all windows)", combined)
+        # OOS sanity summary
+        print("\n" + "-" * 60)
+        print("  WALK-FORWARD SUMMARY")
+        print("-" * 60)
+        for label, trades in per_window:
+            s = _stats_block(trades)
+            pf = s["profit_factor"]
+            pf_str = f"{pf:.2f}" if pf != float("inf") else "inf"
+            print(
+                f"  {label:<40} n={s['total']:>4}  WR={s['win_rate']:>5.1f}%  "
+                f"R={s['total_r']:+7.2f}  PF={pf_str}"
+            )
+        print("-" * 60)
+    else:
+        print_stats("ALL", combined)
+
+    _save_results_csv(combined, "logs/backtest_results.csv")
+
+
+if __name__ == "__main__":
+    main()

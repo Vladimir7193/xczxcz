@@ -174,6 +174,12 @@ TP1_WAVE_MULT = _env_float("TP1_WAVE_MULT", 1.0)
 TP2_WAVE_MULT = _env_float("TP2_WAVE_MULT", 1.618)
 TP3_SPIKE_LEVEL = _env_int("TP3_SPIKE_LEVEL", 1) == 1
 
+# Number of non-overlapping walk-forward windows over DAYS_BACK.
+# 1 = legacy single-window behavior. >=2 splits the period into equal
+# chunks and reports stats per window plus combined, so you can check
+# whether edge holds out-of-sample.
+BACKTEST_WALK_FORWARD_WINDOWS = _env_int("BACKTEST_WALK_FORWARD_WINDOWS", 1)
+
 BACKTEST_ENTRY_WAIT_BARS = _env_int("BACKTEST_ENTRY_WAIT_BARS", 18)
 BACKTEST_TRADE_MAX_BARS = _env_int("BACKTEST_TRADE_MAX_BARS", 220)
 BACKTEST_MOVE_SL_TO_BE_AFTER_TP1 = _env_int("BACKTEST_MOVE_SL_TO_BE_AFTER_TP1", 1) == 1
