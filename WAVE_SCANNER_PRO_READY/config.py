@@ -202,7 +202,21 @@ IMPULSE_BREAKOUT_LOOKBACK = _env_int("IMPULSE_BREAKOUT_LOOKBACK", 12)
 ENTRY_FIB_LOW = _env_float("ENTRY_FIB_LOW", 0.382)
 ENTRY_FIB_HIGH = _env_float("ENTRY_FIB_HIGH", 0.618)
 SL_ATR_MULT = _env_float("SL_ATR_MULT", 1.2)
-SL_MIN_ATR_MULT = _env_float("SL_MIN_ATR_MULT", 1.0)
+# SL_MIN_ATR_MULT (2026-04-22): widened from 1.0 to 1.5.
+# On the deterministic 103-trade snapshot after PR #7's MAX_SCORE cap,
+# 33% of remaining SL exits happen within the first 10 bars (≤50 min) of
+# a 5m trade — textbook stop-hunt / noise pattern rather than a real
+# reversal. Widening the minimum stop distance to 1.5×ATR lets legitimate
+# retracements survive past 5m micro-wicks. Trade-offs folded in:
+#   * raw_stop (impulse_detector) is compared with min_stop and the wider
+#     of the two is used, so wider min_stop will pull some setups to a
+#     larger SL — this reduces rr_ratio and may drop a few trades below
+#     MIN_RR=1.6 (acceptable; those were the most fragile setups anyway).
+#   * min_wave (used to size TP targets) scales with SL_MIN_ATR_MULT, so
+#     TP1/TP2 distances grow proportionally — losers lose the same R, and
+#     winners target proportionally farther. Net R per winner unchanged.
+# Env-overridable so we can bisect back if it degrades PF.
+SL_MIN_ATR_MULT = _env_float("SL_MIN_ATR_MULT", 1.5)
 MIN_RR = _env_float("MIN_RR", 1.6)
 MAX_RR = _env_float("MAX_RR", 4.0)
 MAX_ENTRY_DISTANCE_ATR = _env_float("MAX_ENTRY_DISTANCE_ATR", 1.2)
