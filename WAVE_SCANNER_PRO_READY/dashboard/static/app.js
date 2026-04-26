@@ -608,7 +608,14 @@
     const tokenRe = new RegExp(
       [
         '(&quot;[^&\\n]*?&quot;|&#39;[^&\\n]*?&#39;|`[^`\\n]*?`)', // 1: strings
-        '(#[^\\n]*|\\/\\/[^\\n]*|--[^\\n]*)',                      // 2: line comments
+        // Line comments. We support `#` and `//` anywhere on a line (both
+        // happily appear inline: `x = 1  # foo`, `let y = 2; // foo`). We
+        // do NOT support SQL/Lua/Haskell `--` here because the tokenizer
+        // would then eat the JavaScript decrement operator (`i--`, `--i`)
+        // and consume the rest of the line as a comment. SQL highlighting
+        // is a fair price to pay for not breaking JS/C-family code, which
+        // is the overwhelming majority of what the council pastes.
+        '(#[^\\n]*|\\/\\/[^\\n]*)',                                // 2: line comments
         '(\\b\\d+(?:\\.\\d+)?\\b)',                                 // 3: numbers
         '\\b([A-Za-z_][A-Za-z0-9_]*)(\\s*\\()',                     // 4+5: fn call name + tail
         '(\\b[A-Za-z_][A-Za-z0-9_]*\\b)',                           // 6: identifier (maybe keyword)
