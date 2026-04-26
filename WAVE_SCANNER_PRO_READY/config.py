@@ -305,8 +305,34 @@ BTC_FILTER_EMA_PERIOD = _env_int("BTC_FILTER_EMA_PERIOD", 20)
 BTC_FILTER_REQUIRE_BELOW_EMA = _env_int("BTC_FILTER_REQUIRE_BELOW_EMA", 1) == 1
 LOG_REJECT_SUMMARY_EVERY_CYCLE = _env_int("LOG_REJECT_SUMMARY_EVERY_CYCLE", 1) == 1
 DATA_CACHE_TTL_SEC = _env_int("DATA_CACHE_TTL_SEC", 45)
+DATA_CACHE_MAX_ENTRIES = _env_int("DATA_CACHE_MAX_ENTRIES", 96)
 DATA_REQUEST_PAUSE_SEC = _env_float("DATA_REQUEST_PAUSE_SEC", 0.15)
 DATA_RETRY_SLEEP_SEC = _env_float("DATA_RETRY_SLEEP_SEC", 3.0)
+
+# --- Memory tuning -----------------------------------------------------
+# OHLCV_DTYPE: float32 halves the cache and downstream-Series footprint at
+# the cost of ~7-digit precision (fine for prices up to ~1M; safe for any
+# coin in our universe). Set to "float64" if you need bit-exact parity
+# with previous runs (e.g. for live-vs-backtest cross-validation).
+OHLCV_DTYPE = _env_str("OHLCV_DTYPE", "float64").lower()
+if OHLCV_DTYPE not in {"float32", "float64"}:
+    OHLCV_DTYPE = "float64"
+
+# How often (in cycles) main.py should log RSS memory usage. 0 disables.
+MEM_LOG_EVERY_N_CYCLES = _env_int("MEM_LOG_EVERY_N_CYCLES", 10)
+
+# LOW_RAM_MODE clamps several knobs to memory-friendly defaults. Useful
+# on 8-16 GB machines that also run Ollama (which alone can consume
+# 8-12 GB for a 30B-class model + KV cache).
+LOW_RAM_MODE = _env_int("LOW_RAM_MODE", 0) == 1
+if LOW_RAM_MODE:
+    SCAN_WORKERS = 1
+    EXTENDED_SYMBOLS_LIMIT = 0
+    CANDLES_ENTRY = min(CANDLES_ENTRY, 220)
+    CANDLES_HTF = min(CANDLES_HTF, 160)
+    CANDLES_TREND = min(CANDLES_TREND, 120)
+    DATA_CACHE_MAX_ENTRIES = min(DATA_CACHE_MAX_ENTRIES, 48)
+    OHLCV_DTYPE = "float32"
 
 LOG_LEVEL = _env_str("LOG_LEVEL", "INFO")
 
