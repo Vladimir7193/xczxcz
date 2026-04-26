@@ -146,11 +146,12 @@
               </div>
             </div>
             <button id="prompt-toggle" class="btn text-xs">⚙ System prompt</button>
+            <button id="sampling-toggle" class="btn text-xs" title="Параметры семплинга (temperature, num_ctx и т.д.)">🎚 sampling</button>
             <label class="text-xs flex items-center gap-1 select-none cursor-pointer" title="После ответов всех моделей первая выдаёт консенсус">
               <input id="synth-toggle" type="checkbox" class="accent-cyan-400" checked />
               <span>🧠 synthesize</span>
             </label>
-            <span id="attached-count" class="pill" style="background:rgba(167,139,250,.15);color:var(--accent-2)">0 files attached</span>
+            <span id="attached-count" class="pill" style="background:rgba(167,139,250,.15);color:var(--accent-2)" title="Сколько файлов реально летит в модель">0 files attached</span>
             <div class="ml-auto flex items-center gap-1">
               <button id="chat-stop" class="btn text-xs hidden" style="border-color: var(--err); color: var(--err)">■ stop</button>
               <button id="chat-export" class="btn text-xs" title="Экспорт чата в .md">📥 export</button>
@@ -159,9 +160,55 @@
           </div>
 
           <div id="prompt-block" class="hidden mb-3">
-            <textarea id="system-prompt" rows="2"
-              placeholder="System prompt — общие правила обсуждения, например: «Ты опытный Python-разработчик. Объясняй коротко и по делу»."
-              class="w-full glass rounded-lg p-2 text-sm bg-transparent outline-none resize-y"></textarea>
+            <div class="flex items-center justify-between mb-1 text-[11px] text-slate-400">
+              <span>Дефолтный system prompt уже настроен на жёсткий код-ревью без воды. Очисти, чтобы переопределить.</span>
+              <button id="prompt-reset" class="btn !py-0.5 text-[11px]" title="Вернуть дефолтный жёсткий промпт">↺ reset to default</button>
+            </div>
+            <textarea id="system-prompt" rows="6"
+              placeholder="Оставь пустым, чтобы использовать встроенный жёсткий промпт code-review."
+              class="w-full glass rounded-lg p-2 text-sm bg-transparent outline-none resize-y font-mono"></textarea>
+          </div>
+
+          <div id="sampling-block" class="hidden mb-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+            <label class="glass rounded-lg p-2 flex flex-col gap-0.5">
+              <span class="flex items-center justify-between">
+                <span>temperature</span>
+                <span id="sm-temp-val" class="text-slate-400 font-mono">0.20</span>
+              </span>
+              <input id="sm-temp" type="range" min="0" max="2" step="0.05" value="0.2" class="accent-cyan-400" />
+              <span class="text-[10px] text-slate-500">0.2 = детерминизм для кода, 0.8 = креатив</span>
+            </label>
+            <label class="glass rounded-lg p-2 flex flex-col gap-0.5">
+              <span class="flex items-center justify-between">
+                <span>top_p</span>
+                <span id="sm-topp-val" class="text-slate-400 font-mono">0.90</span>
+              </span>
+              <input id="sm-topp" type="range" min="0.1" max="1" step="0.01" value="0.9" class="accent-cyan-400" />
+              <span class="text-[10px] text-slate-500">отсечка хвоста распределения</span>
+            </label>
+            <label class="glass rounded-lg p-2 flex flex-col gap-0.5">
+              <span class="flex items-center justify-between">
+                <span>num_ctx</span>
+                <span id="sm-ctx-val" class="text-slate-400 font-mono">16384</span>
+              </span>
+              <input id="sm-ctx" type="range" min="2048" max="65536" step="2048" value="16384" class="accent-cyan-400" />
+              <span class="text-[10px] text-slate-500">контекст в токенах · больше = больше RAM</span>
+            </label>
+            <label class="glass rounded-lg p-2 flex flex-col gap-0.5">
+              <span class="flex items-center justify-between">
+                <span>repeat_penalty</span>
+                <span id="sm-rep-val" class="text-slate-400 font-mono">1.10</span>
+              </span>
+              <input id="sm-rep" type="range" min="1" max="1.5" step="0.05" value="1.1" class="accent-cyan-400" />
+              <span class="text-[10px] text-slate-500">борьба с повторами</span>
+            </label>
+            <div class="col-span-2 md:col-span-4 flex flex-wrap items-center gap-1 text-[11px]">
+              <span class="text-slate-400 mr-1">presets:</span>
+              <button class="btn text-[11px] !py-0.5 sm-preset" data-preset="code">📐 Code review (0.2 / 16k)</button>
+              <button class="btn text-[11px] !py-0.5 sm-preset" data-preset="quick">⚡ Quick (0.5 / 8k)</button>
+              <button class="btn text-[11px] !py-0.5 sm-preset" data-preset="creative">🎨 Creative (0.8 / 16k)</button>
+              <button class="btn text-[11px] !py-0.5 sm-preset" data-preset="deep">🔬 Deep (0.15 / 32k)</button>
+            </div>
           </div>
 
           <!-- Messages -->
@@ -169,6 +216,13 @@
 
           <!-- Composer -->
           <div class="mt-3 pt-3 border-t border-white/5">
+            <div id="no-attach-warn"
+                 class="hidden mb-2 px-2 py-1.5 text-[11px] rounded-lg border"
+                 style="background:rgba(245,158,11,.08); border-color:rgba(245,158,11,.4); color:#fcd34d">
+              ⚠ Файлы НЕ прицеплены. Модель не видит твой код и будет угадывать.
+              Открой файл в правой панели и нажми <strong>+ attach</strong>, либо
+              перетащи файл с диска прямо на панель Files.
+            </div>
             <div id="attached-list" class="flex flex-wrap gap-1 mb-2"></div>
             <div class="flex items-end gap-2">
               <textarea id="chat-input" rows="2"

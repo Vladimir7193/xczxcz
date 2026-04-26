@@ -8,6 +8,67 @@
   const $  = (sel) => document.querySelector(sel);
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
+  // Default sampling profile. Local Ollama models default to temperature
+  // 0.7-0.8 which makes them ramble; for code review 0.2 + lower top_p gives
+  // far more usable output. num_ctx=16384 is a sane middle ground (qwen3-coder
+  // 30B at q4 fits ~32k easily; smaller models will clamp internally).
+  const SAMPLING_DEFAULT = Object.freeze({ temperature: 0.2, top_p: 0.9, num_ctx: 16384, repeat_penalty: 1.1 });
+  const SAMPLING_PRESETS = Object.freeze({
+    code:     { temperature: 0.2,  top_p: 0.9,  num_ctx: 16384, repeat_penalty: 1.1 },
+    quick:    { temperature: 0.5,  top_p: 0.9,  num_ctx: 8192,  repeat_penalty: 1.1 },
+    creative: { temperature: 0.8,  top_p: 0.95, num_ctx: 16384, repeat_penalty: 1.05 },
+    deep:     { temperature: 0.15, top_p: 0.85, num_ctx: 32768, repeat_penalty: 1.1 },
+  });
+
+  // Default system prompt baked in. Plenty of users won't open the
+  // ⌘ System prompt panel; we want the council to behave reasonably out of
+  // the box. Few-shot examples matter more than rules — small local models
+  // copy the demonstrated format much more reliably than they follow rules.
+  const DEFAULT_SYSTEM_PROMPT = [
+    "Ты — senior backend/quant-разработчик и code-reviewer. Контекст: торговый бот WAVE Scanner",
+    "(Python, async, pandas/numpy, ccxt, Bybit, Telegram-нотификации). Пользователь",
+    "даёт код или вопрос — ты сразу анализируешь и отвечаешь.",
+    "",
+    "ЖЁСТКИЕ ПРАВИЛА:",
+    "1. НЕ задавай уточняющих вопросов. Делай 1-3 разумных предположения, явно называй их («предполагаю, что…») и продолжай.",
+    "2. НЕ объясняй, что такое «бот» / «API» / «функция». Собеседник — опытный разработчик.",
+    "3. НЕ перечисляй «категории ботов» / «давайте определимся». Анализируй то, что дано.",
+    "4. НЕ извиняйся, не пиши «конечно!» / «хороший вопрос». Сразу к делу.",
+    "5. Если в контексте НЕТ блока '=== Attached files ===' — НЕ выдумывай содержимое.",
+    "   Скажи явно: «прицепленных файлов не вижу, прикрепи их кнопкой + attach» и остановись.",
+    "   НЕ пиши выдуманные имена файлов и номера строк — это враньё.",
+    "",
+    "ФОРМАТ ОТВЕТА:",
+    "- Резюме (1-3 строки): что именно я вижу.",
+    "- Проблемы/находки списком, каждая со ссылкой на file:line.",
+    "- Правки в блоках ```python```. Готовый код, не 'можно бы'.",
+    "- 1 строка trade-off, выбор с обоснованием.",
+    "- 1 строка 'Что проверить дальше'.",
+    "",
+    "ПРИМЕР ХОРОШЕГО ОТВЕТА (копируй формат):",
+    "",
+    "Вопрос: 'бот жрёт память, глянь' + прицеплен data_fetcher.py",
+    "Ответ:",
+    "Резюме: _data_cache — безлимитный dict, TTL проверяется только при чтении. Растёт вечно.",
+    "Проблемы:",
+    "- data_fetcher.py:28 — `_data_cache: Dict` без cap.",
+    "- data_fetcher.py:81 — лишний `.copy()` на каждой записи.",
+    "Правка:",
+    "```python",
+    "from collections import OrderedDict",
+    "_data_cache: OrderedDict = OrderedDict()",
+    "def _cache_set(key, df):",
+    "    _data_cache[key] = (time.time(), df)",
+    "    while len(_data_cache) > 96:",
+    "        _data_cache.popitem(last=False)",
+    "```",
+    "Trade-off: убрал .copy() — безопасно, все consumers только читают (проверено в wave_analyzer.py).",
+    "Что проверить: `LOW_RAM_MODE=1 python main.py` и смотри `MEM:` в логах.",
+    "",
+    "ПРИМЕР ПЛОХОГО ОТВЕТА (ТАК НЕ ДЕЛАЙ):",
+    "«Конечно! Однако для того чтобы проанализировать бота, давайте сначала определимся, что вы понимаете под этим термином…» — запрещено.",
+  ].join("\n");
+
   const state = {
     ws: null,
     cpuHistory: [],
@@ -30,6 +91,7 @@
     streamAbort: null,
     pendingPanes: {}, // model -> {pane, body, status, text}
     lastRound: null,  // {question, models, answers: {model: text}}
+    sampling: { ...SAMPLING_DEFAULT }, // sent in `options` to /api/ollama/*
     // files
     cwd: "",
     filePreview: null,
@@ -433,7 +495,23 @@
   }
   function renderAttached() {
     const list = $("#attached-list");
-    setText("attached-count", `${state.attachedFiles.length} files attached`);
+    const n = state.attachedFiles.length;
+    setText("attached-count", `${n} files attached`);
+    const pill = $("#attached-count");
+    if (pill) {
+      // 0 → amber so users notice; ≥1 → violet (default).
+      if (n === 0) {
+        pill.style.background = "rgba(245,158,11,.15)";
+        pill.style.color = "#fcd34d";
+      } else {
+        pill.style.background = "rgba(167,139,250,.15)";
+        pill.style.color = ""; // fall back to var(--accent-2)
+        pill.style.removeProperty("color");
+        pill.style.color = "var(--accent-2)";
+      }
+    }
+    const warn = $("#no-attach-warn");
+    if (warn) warn.classList.toggle("hidden", n > 0);
     if (!list) return;
     list.innerHTML = state.attachedFiles.map((f) => `
       <span class="attached-chip">
@@ -520,19 +598,38 @@
     "interface","type","enum","struct","fn","mut","pub","use","mod","impl","Self","self","in",
     "of","throw","switch","case","default","extends","implements","package","go","defer","chan",
   ]);
+  // Single-pass tokenizer. We MUST NOT chain multiple .replace() calls here:
+  // earlier passes insert spans like `<span class="tk-str">`, and later passes
+  // (e.g. the keyword pass) would re-match the literal word `class` *inside*
+  // those spans, producing nested broken markup that the browser renders as
+  // visible text (`class="tk-com">…`). One regex with alternatives, one pass.
   function highlightCode(src) {
-    return escapeHtml(src)
-      // strings
-      .replace(/(&quot;[^&]*?&quot;|&#39;[^&]*?&#39;|`[^`]*?`)/g, '<span class="tk-str">$1</span>')
-      // line comments
-      .replace(/(^|\n)([ \t]*)(#.*$|\/\/.*$|--.*$)/gm, '$1$2<span class="tk-com">$3</span>')
-      // numbers
-      .replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="tk-num">$1</span>')
-      // function call
-      .replace(/\b([A-Za-z_][A-Za-z0-9_]*)\s*\(/g, '<span class="tk-fn">$1</span>(')
-      // keywords
-      .replace(/\b([A-Za-z_]+)\b/g, (m, w) =>
-        MD_KEYWORDS.has(w) ? `<span class="tk-kw">${w}</span>` : m);
+    const escaped = escapeHtml(src);
+    const tokenRe = new RegExp(
+      [
+        '(&quot;[^&\\n]*?&quot;|&#39;[^&\\n]*?&#39;|`[^`\\n]*?`)', // 1: strings
+        '(#[^\\n]*|\\/\\/[^\\n]*|--[^\\n]*)',                      // 2: line comments
+        '(\\b\\d+(?:\\.\\d+)?\\b)',                                 // 3: numbers
+        '\\b([A-Za-z_][A-Za-z0-9_]*)(\\s*\\()',                     // 4+5: fn call name + tail
+        '(\\b[A-Za-z_][A-Za-z0-9_]*\\b)',                           // 6: identifier (maybe keyword)
+      ].join('|'),
+      'g'
+    );
+    return escaped.replace(tokenRe, (m, str, com, num, fnName, fnTail, ident) => {
+      if (str !== undefined) return `<span class="tk-str">${str}</span>`;
+      if (com !== undefined) return `<span class="tk-com">${com}</span>`;
+      if (num !== undefined) return `<span class="tk-num">${num}</span>`;
+      if (fnName !== undefined) {
+        // Keyword used as a call (rare in real code: `if(`, `for(` in C-like)
+        // — render as keyword, not function, so coloring stays accurate.
+        if (MD_KEYWORDS.has(fnName)) return `<span class="tk-kw">${fnName}</span>${fnTail}`;
+        return `<span class="tk-fn">${fnName}</span>${fnTail}`;
+      }
+      if (ident !== undefined) {
+        return MD_KEYWORDS.has(ident) ? `<span class="tk-kw">${ident}</span>` : ident;
+      }
+      return m;
+    });
   }
   function renderMarkdown(text) {
     const placeholders = [];
@@ -564,6 +661,48 @@
         catch { btn.textContent = "?"; }
       });
     });
+  }
+
+  // ---------- Sampling controls ----------
+  function applySamplingToUI() {
+    const s = state.sampling;
+    const set = (id, val) => { const el = $(id); if (el) el.value = String(val); };
+    set("#sm-temp", s.temperature); setText("sm-temp-val", s.temperature.toFixed(2));
+    set("#sm-topp", s.top_p);       setText("sm-topp-val", s.top_p.toFixed(2));
+    set("#sm-ctx",  s.num_ctx);     setText("sm-ctx-val",  String(s.num_ctx));
+    set("#sm-rep",  s.repeat_penalty); setText("sm-rep-val", s.repeat_penalty.toFixed(2));
+  }
+  function wireSampling() {
+    const bind = (sel, key, fmt, parse) => {
+      const el = $(sel); if (!el) return;
+      el.addEventListener("input", () => {
+        const v = parse(el.value);
+        state.sampling = { ...state.sampling, [key]: v };
+        const lbl = $(sel + "-val"); if (lbl) lbl.textContent = fmt(v);
+        try { localStorage.setItem("dash:sampling", JSON.stringify(state.sampling)); } catch {}
+      });
+    };
+    bind("#sm-temp", "temperature",    (v) => v.toFixed(2), parseFloat);
+    bind("#sm-topp", "top_p",          (v) => v.toFixed(2), parseFloat);
+    bind("#sm-ctx",  "num_ctx",        (v) => String(v),    (s) => parseInt(s, 10));
+    bind("#sm-rep",  "repeat_penalty", (v) => v.toFixed(2), parseFloat);
+    $$(".sm-preset").forEach((b) => b.addEventListener("click", (e) => {
+      e.preventDefault();
+      const preset = SAMPLING_PRESETS[b.dataset.preset];
+      if (!preset) return;
+      state.sampling = { ...preset };
+      applySamplingToUI();
+      try { localStorage.setItem("dash:sampling", JSON.stringify(state.sampling)); } catch {}
+    }));
+    // Restore from localStorage if present.
+    try {
+      const raw = localStorage.getItem("dash:sampling");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        state.sampling = { ...SAMPLING_DEFAULT, ...parsed };
+      }
+    } catch {}
+    applySamplingToUI();
   }
 
   function makeCopyButton(getText, label = "📋") {
@@ -603,10 +742,12 @@
       for (const f of state.attachedFiles) {
         attached += `\n--- ${f.path}${f.truncated ? " (truncated)" : ""} ---\n${f.content}\n`;
       }
+    } else {
+      // Make the "no files" state explicit — stops models from inventing
+      // file paths and line numbers.
+      attached = "\n\n=== Attached files ===\n(none — пользователь не прицепил файлы. НЕ выдумывай их содержимое.)\n";
     }
-    const base = sysText
-      || "Ты опытный разработчик-консультант. Отвечай по существу, на русском, "
-       + "если пользователь пишет на русском. Если предложен код — давай конкретные правки.";
+    const base = sysText || DEFAULT_SYSTEM_PROMPT;
     return base + attached;
   }
 
@@ -741,6 +882,9 @@
             { role: "system", content: "Ты — арбитр совета AI. Дай структурированный, краткий итог по русски." },
             { role: "user", content: prompt },
           ],
+          // Synthesis benefits from slightly lower temperature than the round
+          // itself — we want a tight summary, not more creativity on top.
+          options: { ...state.sampling, temperature: Math.min(state.sampling.temperature, 0.2) },
           conversation_id: state.conversationId, save: true,
         }),
       });
@@ -829,9 +973,10 @@
     $("#chat-stop").classList.remove("hidden");
 
     const url = state.chatMode === "council" ? "/api/ollama/council" : "/api/ollama/chat";
+    const opts = { ...state.sampling };
     const body = state.chatMode === "council"
-      ? { models, messages, conversation_id: state.conversationId, save: true }
-      : { model: models[0], messages, conversation_id: state.conversationId, save: true };
+      ? { models, messages, options: opts, conversation_id: state.conversationId, save: true }
+      : { model: models[0], messages, options: opts, conversation_id: state.conversationId, save: true };
 
     startCouncilRound(models, text);
 
@@ -964,6 +1109,15 @@
     });
     $("#model-refresh")?.addEventListener("click", refreshModels);
     $("#prompt-toggle")?.addEventListener("click", () => $("#prompt-block")?.classList.toggle("hidden"));
+    $("#sampling-toggle")?.addEventListener("click", () => $("#sampling-block")?.classList.toggle("hidden"));
+    $("#prompt-reset")?.addEventListener("click", () => {
+      const ta = $("#system-prompt");
+      if (ta) { ta.value = ""; try { localStorage.removeItem("dash:sysprompt"); } catch {} }
+    });
+    $("#system-prompt")?.addEventListener("input", (e) => {
+      try { localStorage.setItem("dash:sysprompt", e.target.value); } catch {}
+    });
+    wireSampling();
 
     // Files
     $("#files-up")?.addEventListener("click", () => {
@@ -1014,6 +1168,10 @@
       if (s !== null) {
         state.synthesize = s === "1";
         const cb = $("#synth-toggle"); if (cb) cb.checked = state.synthesize;
+      }
+      const sp = localStorage.getItem("dash:sysprompt");
+      if (sp !== null) {
+        const ta = $("#system-prompt"); if (ta) ta.value = sp;
       }
     } catch {}
   }
