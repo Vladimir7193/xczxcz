@@ -12,6 +12,7 @@
 # ============================================================
 from __future__ import annotations
 
+import gc
 import logging
 import os
 import signal as signal_module
@@ -26,9 +27,38 @@ sys.path.insert(0, os.path.dirname(__file__))
 import config as cfg
 cfg.validate_runtime_config()
 from logger import setup_logging, log_signal
-from data_fetcher import fetch_multi_tf
+from data_fetcher import fetch_multi_tf, cache_stats
 from signal_engine import WaveSignalEngine, WaveSignal, update_btc_cache
 from telegram_notify import send_wave_signal, send_status, send_error, send_daily_report
+
+try:
+    import psutil  # type: ignore
+    _PROC = psutil.Process(os.getpid())
+except ImportError:
+    psutil = None  # type: ignore
+    _PROC = None
+
+
+def _log_memory(cycle: int) -> None:
+    every = int(getattr(cfg, "MEM_LOG_EVERY_N_CYCLES", 0) or 0)
+    if every <= 0 or cycle % every != 0:
+        return
+    stats = cache_stats()
+    rss_mb: float = -1.0
+    if _PROC is not None:
+        try:
+            rss_mb = _PROC.memory_info().rss / (1024 * 1024)
+        except Exception:
+            rss_mb = -1.0
+    rss_str = f"rss={rss_mb:.0f}MB" if rss_mb >= 0 else "rss=psutil-not-installed"
+    logger.info(
+        "MEM: %s cache_entries=%d/%d cache_bytes=%dKB ttl=%ds dtype=%s",
+        rss_str,
+        stats["entries"], stats["max_entries"],
+        stats["approx_bytes"] // 1024,
+        stats["ttl_sec"],
+        getattr(cfg, "OHLCV_DTYPE", "float64"),
+    )
 
 setup_logging()
 logger = logging.getLogger("main")
@@ -215,6 +245,13 @@ def main() -> None:
             n = run_cycle()
             elapsed = time.time() - cycle_start
             logger.info(f"Cycle #{cycle_count} done in {elapsed:.1f}s — {n} signals")
+
+            # Reclaim transient pandas/numpy allocations between cycles. Python's
+            # generational GC skips long-lived objects but a scan cycle creates
+            # thousands of short-lived Series / WavePoint / Counter entries, and
+            # explicit collection keeps RSS from drifting upward over hours.
+            gc.collect()
+            _log_memory(cycle_count)
 
             # Дневной отчёт
             today = datetime.now(timezone.utc).date()
