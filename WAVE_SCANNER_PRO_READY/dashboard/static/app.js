@@ -41,7 +41,14 @@
     "ФОРМАТ ОТВЕТА:",
     "- Резюме (1-3 строки): что именно я вижу.",
     "- Проблемы/находки списком, каждая со ссылкой на file:line.",
-    "- Правки в блоках ```python```. Готовый код, не 'можно бы'.",
+    "- Правки. Если меняешь существующий файл или создаёшь новый — выдай ПОЛНЫЙ новый",
+    "  текст файла, обёрнутый в специальные маркеры (это запустит Apply-кнопку в дашборде):",
+    "  <<<EDIT path=\"путь/к/файлу.py\">>>",
+    "  <полное новое содержимое файла, без обрамляющих ```>",
+    "  <<<END>>>",
+    "  Можно несколько EDIT-блоков подряд для разных файлов.",
+    "  ВАЖНО: содержимое внутри маркеров — сырой текст файла, БЕЗ ```python ... ``` обёртки.",
+    "  Для иллюстраций (фрагменты, не полные файлы) используй обычный ```python``` блок.",
     "- 1 строка trade-off, выбор с обоснованием.",
     "- 1 строка 'Что проверить дальше'.",
     "",
@@ -53,15 +60,18 @@
     "Проблемы:",
     "- data_fetcher.py:28 — `_data_cache: Dict` без cap.",
     "- data_fetcher.py:81 — лишний `.copy()` на каждой записи.",
-    "Правка:",
-    "```python",
+    "Правка (полный новый файл — Apply-кнопка перепишет на диск):",
+    "<<<EDIT path=\"data_fetcher.py\">>>",
     "from collections import OrderedDict",
+    "import time",
+    "",
     "_data_cache: OrderedDict = OrderedDict()",
+    "",
     "def _cache_set(key, df):",
     "    _data_cache[key] = (time.time(), df)",
     "    while len(_data_cache) > 96:",
     "        _data_cache.popitem(last=False)",
-    "```",
+    "<<<END>>>",
     "Trade-off: убрал .copy() — безопасно, все consumers только читают (проверено в wave_analyzer.py).",
     "Что проверить: `LOW_RAM_MODE=1 python main.py` и смотри `MEM:` в логах.",
     "",
@@ -489,6 +499,59 @@
     state.attachedFiles.push({ path: f.path, content: f.content, size: f.size, truncated: !!f.truncated });
     renderAttached();
   }
+  // Recursively attach every text file under the current directory. Backend
+  // caps at 200 files / 4 MB; we read each file in parallel batches and
+  // merge into state.attachedFiles, deduping by path.
+  async function attachCurrentFolder() {
+    const btn = $("#files-attach-folder");
+    if (btn) { btn.disabled = true; btn.textContent = "… walking"; }
+    try {
+      const r = await fetch(`/api/files/walk?path=${encodeURIComponent(state.cwd || "")}`, { cache: "no-store" });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.detail || r.statusText);
+      }
+      const j = await r.json();
+      const have = new Set(state.attachedFiles.map((f) => f.path));
+      const todo = (j.files || []).filter((f) => !have.has(f.path));
+      const batchSize = 8;
+      let added = 0;
+      for (let i = 0; i < todo.length; i += batchSize) {
+        if (btn) btn.textContent = `… ${i}/${todo.length}`;
+        const slice = todo.slice(i, i + batchSize);
+        const results = await Promise.all(
+          slice.map((meta) =>
+            fetch(`/api/files/read?path=${encodeURIComponent(meta.path)}`)
+              .then((rr) => (rr.ok ? rr.json() : null))
+              .catch(() => null)
+          )
+        );
+        for (const f of results) {
+          if (!f) continue;
+          state.attachedFiles.push({ path: f.path, content: f.content, size: f.size, truncated: !!f.truncated });
+          added += 1;
+        }
+      }
+      renderAttached();
+      if (j.truncated) {
+        const note = `⚠ attach folder: hit cap at ${j.count} files / ${fmtSize(j.total_bytes)}. Narrow the cwd if you need more.`;
+        const stream = $("#chat-stream");
+        if (stream) {
+          const div = document.createElement("div");
+          div.className = "text-xs text-amber-300 px-2 py-1";
+          div.textContent = note;
+          stream.appendChild(div);
+          stream.scrollTop = stream.scrollHeight;
+        }
+      }
+      console.log(`attach folder: +${added} files, total now ${state.attachedFiles.length}`);
+    } catch (e) {
+      console.error("attach folder failed:", e);
+      alert("attach folder: " + String(e.message || e));
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = "📁 attach folder"; }
+    }
+  }
   function detachFile(path) {
     state.attachedFiles = state.attachedFiles.filter((x) => x.path !== path);
     renderAttached();
@@ -508,6 +571,31 @@
         pill.style.color = ""; // fall back to var(--accent-2)
         pill.style.removeProperty("color");
         pill.style.color = "var(--accent-2)";
+      }
+    }
+    // Token budget pill: rough chars/4 estimate. Helps the user see when an
+    // attach-folder will overflow num_ctx (Ollama silently truncates the tail).
+    const budget = $("#attached-budget");
+    if (budget) {
+      if (n === 0) {
+        budget.classList.add("hidden");
+      } else {
+        const totalChars = state.attachedFiles.reduce((s, f) => s + (f.content?.length || 0), 0);
+        const tokens = Math.ceil(totalChars / 4);
+        const ctx = state.sampling.num_ctx || 16384;
+        const pct = Math.min(999, Math.round((tokens / ctx) * 100));
+        budget.classList.remove("hidden");
+        budget.textContent = `~${(tokens / 1000).toFixed(1)}k tok (${pct}% of ${(ctx / 1000).toFixed(0)}k)`;
+        if (tokens > ctx) {
+          budget.style.background = "rgba(244,63,94,.15)";
+          budget.style.color = "#fca5a5";
+        } else if (tokens > ctx * 0.8) {
+          budget.style.background = "rgba(245,158,11,.15)";
+          budget.style.color = "#fcd34d";
+        } else {
+          budget.style.background = "rgba(167,139,250,.10)";
+          budget.style.color = "var(--accent-2)";
+        }
       }
     }
     const warn = $("#no-attach-warn");
@@ -656,9 +744,165 @@
     if (last < src.length) out += escapeHtml(src.slice(last));
     return out;
   }
+  // Cheap LCS-based line diff. Returns an array of {kind: " "|"-"|"+", line: string}.
+  // Good enough for a side-by-side diff on small files; we don't need git-quality.
+  function diffLines(oldText, newText) {
+    const a = oldText.split("\n");
+    const b = newText.split("\n");
+    const m = a.length, n = b.length;
+    // dp table for LCS — keep it small to avoid OOM on large diffs.
+    if (m > 2000 || n > 2000) {
+      // Fallback: treat as full replace.
+      return a.map((l) => ({ kind: "-", line: l })).concat(b.map((l) => ({ kind: "+", line: l })));
+    }
+    const dp = Array.from({ length: m + 1 }, () => new Uint16Array(n + 1));
+    for (let i = m - 1; i >= 0; i--) {
+      for (let j = n - 1; j >= 0; j--) {
+        dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+    const out = [];
+    let i = 0, j = 0;
+    while (i < m && j < n) {
+      if (a[i] === b[j]) { out.push({ kind: " ", line: a[i] }); i++; j++; }
+      else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push({ kind: "-", line: a[i] }); i++; }
+      else { out.push({ kind: "+", line: b[j] }); j++; }
+    }
+    while (i < m) out.push({ kind: "-", line: a[i++] });
+    while (j < n) out.push({ kind: "+", line: b[j++] });
+    return out;
+  }
+
+  // Strip an inner code fence the model may have wrapped around the file
+  // contents. The system prompt asks for raw content but small models
+  // sometimes hallucinate ```python ... ``` anyway.
+  function stripInnerFence(s) {
+    const m = String(s || "").match(/^\s*```[a-zA-Z0-9_+-]*\n([\s\S]*?)\n```\s*$/);
+    return m ? m[1] : s;
+  }
+
+  // Render an EDIT card for one <<<EDIT path="..."/EDIT>>> block. Returns
+  // raw HTML; the Apply button is wired later via attachEditCardHandlers.
+  function renderEditCard(path, rawContent) {
+    const newContent = stripInnerFence(rawContent);
+    const attached = state.attachedFiles.find((f) => f.path === path);
+    const oldContent = attached ? (attached.content || "") : null;
+    const isNew = oldContent === null;
+
+    let summary = "";
+    let diffRows = "";
+    if (isNew) {
+      const lines = newContent.split("\n");
+      summary = `<span class="text-emerald-300">+${lines.length}</span> · new file`;
+      diffRows = lines.map((l) =>
+        `<div class="diff-row diff-add"><span class="diff-mark">+</span><span class="diff-line">${escapeHtml(l) || "&nbsp;"}</span></div>`
+      ).join("");
+    } else {
+      const rows = diffLines(oldContent, newContent);
+      const adds = rows.filter((r) => r.kind === "+").length;
+      const dels = rows.filter((r) => r.kind === "-").length;
+      summary = `<span class="text-emerald-300">+${adds}</span> · <span class="text-rose-300">-${dels}</span>`;
+      // Skip rendering huge unchanged-only spans: collapse runs of >6 unchanged
+      // lines down to a "… N unchanged …" marker.
+      const compact = [];
+      let run = 0;
+      for (const r of rows) {
+        if (r.kind === " ") {
+          run++;
+          if (run <= 3) compact.push(r);
+        } else {
+          if (run > 6) compact.push({ kind: "…", line: `… ${run - 3} unchanged …` });
+          run = 0;
+          compact.push(r);
+        }
+      }
+      diffRows = compact.map((r) => {
+        const cls = r.kind === "+" ? "diff-add" : r.kind === "-" ? "diff-del" : r.kind === "…" ? "diff-skip" : "diff-eq";
+        return `<div class="diff-row ${cls}"><span class="diff-mark">${r.kind}</span><span class="diff-line">${escapeHtml(r.line) || "&nbsp;"}</span></div>`;
+      }).join("");
+    }
+
+    // Encode payload via base64 to survive any HTML mangling on the path back.
+    const payload = btoa(unescape(encodeURIComponent(newContent)));
+    return (
+      `<div class="edit-card" data-edit-path="${escapeHtml(path)}" data-edit-payload-b64="${payload}">` +
+        `<div class="edit-card-header">` +
+          `<span class="edit-card-title">📝 <code>${escapeHtml(path)}</code></span>` +
+          `<span class="edit-card-summary">${summary}</span>` +
+          `<button type="button" class="edit-card-toggle btn text-[11px]">hide diff</button>` +
+          `<button type="button" class="edit-card-copy btn text-[11px]">📋 copy</button>` +
+          `<button type="button" class="edit-card-apply btn text-[11px]" style="border-color:var(--ok);color:var(--ok)">✅ Apply</button>` +
+        `</div>` +
+        `<div class="edit-card-body"><div class="edit-diff">${diffRows}</div></div>` +
+      `</div>`
+    );
+  }
+
+  function attachEditCardHandlers(root) {
+    root.querySelectorAll(".edit-card").forEach((card) => {
+      if (card.dataset.wired === "1") return;
+      card.dataset.wired = "1";
+      const path = card.dataset.editPath;
+      const decode = () => decodeURIComponent(escape(atob(card.dataset.editPayloadB64 || "")));
+      const body = card.querySelector(".edit-card-body");
+      const toggle = card.querySelector(".edit-card-toggle");
+      toggle?.addEventListener("click", (e) => {
+        e.preventDefault();
+        const hidden = body.classList.toggle("hidden");
+        toggle.textContent = hidden ? "show diff" : "hide diff";
+      });
+      card.querySelector(".edit-card-copy")?.addEventListener("click", async (e) => {
+        e.preventDefault();
+        const btn = e.currentTarget;
+        try { await navigator.clipboard.writeText(decode()); btn.textContent = "✓"; setTimeout(() => (btn.textContent = "📋 copy"), 1200); }
+        catch { btn.textContent = "✗"; }
+      });
+      card.querySelector(".edit-card-apply")?.addEventListener("click", async (e) => {
+        e.preventDefault();
+        const btn = e.currentTarget;
+        const content = decode();
+        if (!confirm(`Перезаписать ${path}? (${content.length} символов)`)) return;
+        btn.disabled = true;
+        const orig = btn.textContent;
+        btn.textContent = "…writing";
+        try {
+          const r = await fetch("/api/files/write", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path, content }),
+          });
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || r.statusText);
+          }
+          btn.textContent = "✓ saved";
+          btn.style.borderColor = "var(--ok)";
+          card.classList.add("edit-card-applied");
+          // If this file was attached, update its in-memory content so the
+          // next message reflects the new state.
+          const att = state.attachedFiles.find((f) => f.path === path);
+          if (att) { att.content = content; att.size = content.length; renderAttached(); }
+        } catch (err) {
+          btn.textContent = "✗ " + (err.message || err);
+          btn.style.borderColor = "var(--err)";
+          btn.style.color = "var(--err)";
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
   function renderMarkdown(text) {
     const placeholders = [];
     let work = String(text || "");
+    // 1. Extract EDIT blocks first so their content isn't subjected to
+    //    ` ` / `**` / etc. mangling.
+    work = work.replace(/<<<EDIT path="([^"]+)">>>\n?([\s\S]*?)\n?<<<END>>>/g, (_, path, content) => {
+      const i = placeholders.length;
+      placeholders.push(renderEditCard(path, content));
+      return `\u0000\u0000PLACE${i}\u0000\u0000`;
+    });
+    // 2. Then triple-backtick code fences.
     work = work.replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) => {
       const i = placeholders.length;
       const langLabel = lang ? lang.toLowerCase() : "";
@@ -805,7 +1049,7 @@
         </div>`;
       const body = wrap.querySelector(".body");
       body.innerHTML = renderMarkdown(m.content || "");
-      attachCodeCopyHandlers(body);
+      attachCodeCopyHandlers(body); attachEditCardHandlers(body);
       const actions = wrap.querySelector(".bubble-actions");
       actions.appendChild(makeCopyButton(() => m.content || "", "📋"));
       chat.appendChild(wrap);
@@ -852,7 +1096,7 @@
     const p = state.pendingPanes[model]; if (!p) return;
     p.text += delta;
     p.body.innerHTML = renderMarkdown(p.text);
-    attachCodeCopyHandlers(p.body);
+    attachCodeCopyHandlers(p.body); attachEditCardHandlers(p.body);
     const chat = $("#chat-stream");
     chat.scrollTop = chat.scrollHeight;
   }
@@ -922,7 +1166,7 @@
         if (evt.type === "delta") {
           text += evt.delta;
           body.innerHTML = renderMarkdown(text);
-          attachCodeCopyHandlers(body);
+          attachCodeCopyHandlers(body); attachEditCardHandlers(body);
           chat.scrollTop = chat.scrollHeight;
         } else if (evt.type === "end") {
           pane.classList.remove("streaming");
@@ -1156,6 +1400,7 @@
       state.filePreview = null;
     });
     $("#files-attach")?.addEventListener("click", attachCurrentFile);
+    $("#files-attach-folder")?.addEventListener("click", attachCurrentFolder);
 
     // Conversations
     $("#conv-new")?.addEventListener("click", newConversation);
