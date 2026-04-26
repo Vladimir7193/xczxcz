@@ -22,12 +22,14 @@
     selectedModels: new Set(),
     availableModels: [],
     chatMode: "council",
+    synthesize: true,
     conversationId: null,
     conversations: [],
-    attachedFiles: [], // [{path, content, size}]
+    attachedFiles: [], // [{path, content, size, source: "ws"|"upload"}]
     streaming: false,
     streamAbort: null,
-    pendingPanes: {}, // model -> {body el, accum text}
+    pendingPanes: {}, // model -> {pane, body, status, text}
+    lastRound: null,  // {question, models, answers: {model: text}}
     // files
     cwd: "",
     filePreview: null,
@@ -496,6 +498,89 @@
     } catch (e) { console.warn(e); }
   }
 
+  // ---------- Chat helpers: colors, markdown, copy ----------
+  function modelColor(name) {
+    const n = String(name || "").toLowerCase();
+    if (n.startsWith("qwen"))     return "qwen";
+    if (n.startsWith("deepseek")) return "deepseek";
+    if (n.startsWith("llama") || n.startsWith("meta"))    return "llama";
+    if (n.startsWith("mistral") || n.startsWith("mixtral")) return "mistral";
+    if (n.startsWith("gemma") || n.startsWith("phi"))      return "gemma";
+    return "";
+  }
+
+  // Minimal Markdown → HTML for chat bubbles. We intentionally support
+  // only fenced code blocks, inline code, **bold**, *italic*, headings —
+  // enough for typical AI replies, no full markdown grammar.
+  const MD_KEYWORDS = new Set([
+    "def","class","return","if","elif","else","for","while","import","from","as","with",
+    "try","except","finally","raise","yield","lambda","pass","break","continue","async","await",
+    "True","False","None","function","var","let","const","new","this","null","undefined","true",
+    "false","public","private","protected","static","void","int","float","double","string","bool",
+    "interface","type","enum","struct","fn","mut","pub","use","mod","impl","Self","self","in",
+    "of","throw","switch","case","default","extends","implements","package","go","defer","chan",
+  ]);
+  function highlightCode(src) {
+    return escapeHtml(src)
+      // strings
+      .replace(/(&quot;[^&]*?&quot;|&#39;[^&]*?&#39;|`[^`]*?`)/g, '<span class="tk-str">$1</span>')
+      // line comments
+      .replace(/(^|\n)([ \t]*)(#.*$|\/\/.*$|--.*$)/gm, '$1$2<span class="tk-com">$3</span>')
+      // numbers
+      .replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="tk-num">$1</span>')
+      // function call
+      .replace(/\b([A-Za-z_][A-Za-z0-9_]*)\s*\(/g, '<span class="tk-fn">$1</span>(')
+      // keywords
+      .replace(/\b([A-Za-z_]+)\b/g, (m, w) =>
+        MD_KEYWORDS.has(w) ? `<span class="tk-kw">${w}</span>` : m);
+  }
+  function renderMarkdown(text) {
+    const placeholders = [];
+    let work = String(text || "");
+    work = work.replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) => {
+      const i = placeholders.length;
+      const langLabel = lang ? lang.toLowerCase() : "";
+      placeholders.push(
+        `<pre><span class="lang">${escapeHtml(langLabel)}</span>` +
+        `<button class="code-copy" type="button">copy</button>` +
+        `<code>${highlightCode(code.replace(/\n$/, ""))}</code></pre>`
+      );
+      return `\u0000\u0000PLACE${i}\u0000\u0000`;
+    });
+    work = escapeHtml(work)
+      .replace(/`([^`\n]+?)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|\s)\*([^*\n]+)\*(?=\s|$)/g, '$1<em>$2</em>')
+      .replace(/^(#{1,3})\s+(.*)$/gm, (_, hs, t) => `<strong>${escapeHtml(t)}</strong>`)
+      .replace(/\n/g, "<br>");
+    return work.replace(/\u0000\u0000PLACE(\d+)\u0000\u0000/g, (_, i) => placeholders[Number(i)]);
+  }
+  function attachCodeCopyHandlers(root) {
+    root.querySelectorAll(".code-copy").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const code = btn.parentElement.querySelector("code")?.innerText || "";
+        try { await navigator.clipboard.writeText(code); btn.textContent = "copied"; setTimeout(() => (btn.textContent = "copy"), 1200); }
+        catch { btn.textContent = "?"; }
+      });
+    });
+  }
+
+  function makeCopyButton(getText, label = "📋") {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.title = "Copy to clipboard";
+    b.addEventListener("click", async (e) => {
+      e.preventDefault(); e.stopPropagation();
+      try {
+        await navigator.clipboard.writeText(getText());
+        b.textContent = "✓"; setTimeout(() => (b.textContent = label), 1200);
+      } catch { b.textContent = "✗"; }
+    });
+    return b;
+  }
+
   // ---------- Chat / Council ----------
   function setChatMode(mode) {
     state.chatMode = mode;
@@ -533,19 +618,30 @@
       row.innerHTML = `
         <div>
           <div class="msg-meta justify-end">you · ${new Date((m.ts || 0) * 1000).toLocaleTimeString()}</div>
-          <div class="msg-bubble">${escapeHtml(m.content)}</div>
+          <div class="msg-bubble">${escapeHtml(m.content).replace(/\n/g, "<br>")}</div>
         </div>`;
       chat.appendChild(row);
     } else {
-      // single assistant message — render as a single pane
       const wrap = document.createElement("div");
       wrap.className = "msg-row";
+      const color = modelColor(m.model);
+      const colorAttr = color ? ` data-color="${color}"` : "";
+      const ts = new Date((m.ts || 0) * 1000).toLocaleTimeString();
       wrap.innerHTML = `
         <div class="flex-1 min-w-0">
-          <div class="msg-meta"><span class="msg-model">${escapeHtml(m.model || "assistant")}</span><span>${new Date((m.ts || 0) * 1000).toLocaleTimeString()}</span></div>
-          <div class="msg-bubble"></div>
+          <div class="council-pane"${colorAttr}>
+            <div class="head">
+              <span><span class="msg-model">${escapeHtml(m.model || "assistant")}</span> <span class="text-slate-500">${ts}</span></span>
+              <span class="bubble-actions"></span>
+            </div>
+            <div class="body"></div>
+          </div>
         </div>`;
-      wrap.querySelector(".msg-bubble").textContent = m.content;
+      const body = wrap.querySelector(".body");
+      body.innerHTML = renderMarkdown(m.content || "");
+      attachCodeCopyHandlers(body);
+      const actions = wrap.querySelector(".bubble-actions");
+      actions.appendChild(makeCopyButton(() => m.content || "", "📋"));
       chat.appendChild(wrap);
     }
     chat.scrollTop = chat.scrollHeight;
@@ -553,10 +649,8 @@
 
   function startCouncilRound(models, userText) {
     const chat = $("#chat-stream");
-    // user bubble
     const userTs = Date.now() / 1000;
     renderMessage({ role: "user", content: userText, ts: userTs });
-    // grid of council panes
     const grid = document.createElement("div");
     grid.className = "council-grid";
     state.pendingPanes = {};
@@ -564,20 +658,35 @@
       const pane = document.createElement("div");
       pane.className = "council-pane streaming";
       pane.dataset.model = model;
+      const c = modelColor(model);
+      if (c) pane.dataset.color = c;
       pane.innerHTML = `
-        <div class="head"><span class="msg-model">${escapeHtml(model)}</span><span class="text-slate-500" data-status>streaming…</span></div>
+        <div class="head">
+          <span><span class="msg-model">${escapeHtml(model)}</span> <span class="text-slate-500" data-status>streaming…</span></span>
+          <span class="bubble-actions"></span>
+        </div>
         <div class="body"></div>`;
       grid.appendChild(pane);
-      state.pendingPanes[model] = { pane, body: pane.querySelector(".body"), status: pane.querySelector("[data-status]"), text: "" };
+      const rec = {
+        pane,
+        body: pane.querySelector(".body"),
+        status: pane.querySelector("[data-status]"),
+        actions: pane.querySelector(".bubble-actions"),
+        text: "",
+      };
+      rec.actions.appendChild(makeCopyButton(() => rec.text, "📋"));
+      state.pendingPanes[model] = rec;
     }
     chat.appendChild(grid);
     chat.scrollTop = chat.scrollHeight;
+    state.lastRound = { question: userText, models: [...models], answers: {}, started: Date.now() };
   }
 
   function pushDelta(model, delta) {
     const p = state.pendingPanes[model]; if (!p) return;
     p.text += delta;
-    p.body.textContent = p.text;
+    p.body.innerHTML = renderMarkdown(p.text);
+    attachCodeCopyHandlers(p.body);
     const chat = $("#chat-stream");
     chat.scrollTop = chat.scrollHeight;
   }
@@ -587,6 +696,113 @@
     p.pane.classList.remove("streaming");
     if (info.error) p.status.textContent = "error";
     else p.status.textContent = info.eval_count ? `${info.eval_count} tokens` : "done";
+    if (state.lastRound && !info.error) state.lastRound.answers[model] = p.text;
+  }
+
+  // After all council panes finish, ask the first model to synthesize.
+  async function runSynthesis() {
+    if (!state.lastRound) return;
+    const { question, models, answers } = state.lastRound;
+    const valid = Object.entries(answers).filter(([, v]) => (v || "").trim().length);
+    if (valid.length < 2) return; // nothing to synthesize
+    const synth = models.find((m) => answers[m]) || models[0];
+    const chat = $("#chat-stream");
+    const pane = document.createElement("div");
+    pane.className = "council-pane synth streaming";
+    pane.dataset.model = `${synth} · synthesis`;
+    pane.innerHTML = `
+      <div class="head">
+        <span><span class="msg-model">🧠 synthesis · ${escapeHtml(synth)}</span> <span class="text-slate-500" data-status>analyzing…</span></span>
+        <span class="bubble-actions"></span>
+      </div>
+      <div class="body"></div>`;
+    chat.appendChild(pane);
+    chat.scrollTop = chat.scrollHeight;
+    const body = pane.querySelector(".body");
+    const status = pane.querySelector("[data-status]");
+    const actions = pane.querySelector(".bubble-actions");
+    let text = "";
+    actions.appendChild(makeCopyButton(() => text, "📋"));
+
+    let prompt = `Ты получил несколько ответов от разных AI на вопрос:\n\n"${question}"\n\n`;
+    valid.forEach(([m, ans], i) => { prompt += `Ответ ${i + 1} (${m}):\n${ans}\n\n`; });
+    prompt += "Проанализируй ответы и дай итог:\n" +
+      "1. Что общего во всех ответах\n" +
+      "2. Ключевые различия\n" +
+      "3. Лучший подход и почему\n" +
+      "4. Финальная рекомендация\n";
+
+    try {
+      const r = await fetch("/api/ollama/chat", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: synth,
+          messages: [
+            { role: "system", content: "Ты — арбитр совета AI. Дай структурированный, краткий итог по русски." },
+            { role: "user", content: prompt },
+          ],
+          conversation_id: state.conversationId, save: true,
+        }),
+      });
+      if (!r.ok || !r.body) {
+        status.textContent = "error";
+        body.textContent = `synthesis failed (${r.status})`;
+        return;
+      }
+      await consumeSSE(r.body, (evt) => {
+        if (evt.type === "delta") {
+          text += evt.delta;
+          body.innerHTML = renderMarkdown(text);
+          attachCodeCopyHandlers(body);
+          chat.scrollTop = chat.scrollHeight;
+        } else if (evt.type === "end") {
+          pane.classList.remove("streaming");
+          status.textContent = evt.eval_count ? `${evt.eval_count} tokens` : "done";
+        } else if (evt.type === "error") {
+          pane.classList.remove("streaming");
+          status.textContent = "error";
+          body.textContent = `${evt.error}\n${evt.hint || ""}`;
+        }
+      });
+    } catch (e) {
+      pane.classList.remove("streaming");
+      status.textContent = "error";
+      body.textContent = String(e);
+    }
+  }
+
+  function exportChatMarkdown() {
+    const chat = $("#chat-stream");
+    if (!chat || !chat.children.length) { alert("Чат пуст."); return; }
+    const lines = ["# WAVE Scanner — chat export", "", `_${new Date().toISOString()}_`, ""];
+    chat.querySelectorAll(".msg-row, .council-grid").forEach((node) => {
+      if (node.classList.contains("msg-row")) {
+        const isUser = node.classList.contains("user");
+        const bubble = node.querySelector(".msg-bubble");
+        const pane = node.querySelector(".council-pane");
+        if (bubble) {
+          lines.push(`### ${isUser ? "🧑 you" : "🤖 assistant"}`);
+          lines.push("", bubble.innerText.trim(), "");
+        } else if (pane) {
+          const model = pane.querySelector(".msg-model")?.innerText || "assistant";
+          lines.push(`### 🤖 ${model}`);
+          lines.push("", pane.querySelector(".body")?.innerText.trim() || "", "");
+        }
+      } else {
+        node.querySelectorAll(".council-pane").forEach((pane) => {
+          const model = pane.querySelector(".msg-model")?.innerText || "assistant";
+          lines.push(`### 🤖 ${model}`);
+          lines.push("", pane.querySelector(".body")?.innerText.trim() || "", "");
+        });
+      }
+    });
+    const md = lines.join("\n");
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `wave-chat-${new Date().toISOString().replace(/[:.]/g, "-")}.md`;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 200);
   }
 
   async function sendChat() {
@@ -661,6 +877,9 @@
       $("#chat-stop").classList.add("hidden");
       state.streamAbort = null;
       loadConversations();
+      if (state.chatMode === "council" && state.synthesize) {
+        runSynthesis().catch((e) => console.warn("synthesis failed", e));
+      }
     }
   }
 
@@ -685,6 +904,38 @@
 
   function abortStream() {
     if (state.streamAbort) state.streamAbort.abort();
+  }
+
+  // ---------- Local file upload (no server round-trip) ----------
+  const UPLOAD_MAX_BYTES = 512 * 1024;
+  const UPLOAD_TEXT_RE = /\.(py|js|jsx|ts|tsx|html?|css|scss|less|json|ya?ml|toml|ini|cfg|env|txt|md|rst|csv|tsv|sh|bash|zsh|bat|ps1|sql|r|rb|go|rs|c|h|cpp|hpp|java|kt|swift|pine)$/i;
+
+  async function uploadLocalFiles(fileList) {
+    const files = Array.from(fileList || []);
+    for (const f of files) {
+      if (!UPLOAD_TEXT_RE.test(f.name) && f.type && !f.type.startsWith("text/")) {
+        console.warn("skipped non-text file:", f.name); continue;
+      }
+      const sliced = f.size > UPLOAD_MAX_BYTES ? f.slice(0, UPLOAD_MAX_BYTES) : f;
+      const content = await sliced.text();
+      const path = `upload/${f.name}`;
+      const existing = state.attachedFiles.find((x) => x.path === path);
+      if (existing) { existing.content = content; existing.size = f.size; existing.truncated = f.size > UPLOAD_MAX_BYTES; }
+      else state.attachedFiles.push({ path, content, size: f.size, truncated: f.size > UPLOAD_MAX_BYTES, source: "upload" });
+    }
+    renderAttached();
+  }
+
+  function setupDragDrop() {
+    const panel = $("#files-panel");
+    if (!panel) return;
+    const flash = (on) => panel.style.outline = on ? "2px dashed var(--accent)" : "";
+    ["dragenter", "dragover"].forEach((ev) => panel.addEventListener(ev, (e) => { e.preventDefault(); flash(true); }));
+    ["dragleave", "drop"].forEach((ev) => panel.addEventListener(ev, () => flash(false)));
+    panel.addEventListener("drop", (e) => {
+      e.preventDefault(); flash(false);
+      if (e.dataTransfer?.files?.length) uploadLocalFiles(e.dataTransfer.files);
+    });
   }
 
   // ---------- wiring ----------
@@ -730,10 +981,23 @@
     // Conversations
     $("#conv-new")?.addEventListener("click", newConversation);
 
+    // File upload
+    $("#files-upload-btn")?.addEventListener("click", () => $("#files-upload-input")?.click());
+    $("#files-upload-input")?.addEventListener("change", (e) => {
+      uploadLocalFiles(e.target.files);
+      e.target.value = "";
+    });
+    setupDragDrop();
+
     // Chat
     $("#chat-send")?.addEventListener("click", sendChat);
     $("#chat-stop")?.addEventListener("click", abortStream);
-    $("#chat-clear")?.addEventListener("click", () => { $("#chat-stream").innerHTML = ""; });
+    $("#chat-clear")?.addEventListener("click", () => { $("#chat-stream").innerHTML = ""; state.lastRound = null; });
+    $("#chat-export")?.addEventListener("click", exportChatMarkdown);
+    $("#synth-toggle")?.addEventListener("change", (e) => {
+      state.synthesize = !!e.target.checked;
+      try { localStorage.setItem("dash:synth", state.synthesize ? "1" : "0"); } catch {}
+    });
     $("#chat-input")?.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); }
     });
@@ -746,6 +1010,11 @@
       const cm = localStorage.getItem("dash:chatMode"); if (cm) setChatMode(cm);
       const ms = localStorage.getItem("dash:models");
       if (ms) { try { JSON.parse(ms).forEach((x) => state.selectedModels.add(x)); } catch {} }
+      const s = localStorage.getItem("dash:synth");
+      if (s !== null) {
+        state.synthesize = s === "1";
+        const cb = $("#synth-toggle"); if (cb) cb.checked = state.synthesize;
+      }
     } catch {}
   }
 

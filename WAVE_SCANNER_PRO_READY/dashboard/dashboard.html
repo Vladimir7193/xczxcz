@@ -146,10 +146,15 @@
               </div>
             </div>
             <button id="prompt-toggle" class="btn text-xs">⚙ System prompt</button>
+            <label class="text-xs flex items-center gap-1 select-none cursor-pointer" title="После ответов всех моделей первая выдаёт консенсус">
+              <input id="synth-toggle" type="checkbox" class="accent-cyan-400" checked />
+              <span>🧠 synthesize</span>
+            </label>
             <span id="attached-count" class="pill" style="background:rgba(167,139,250,.15);color:var(--accent-2)">0 files attached</span>
             <div class="ml-auto flex items-center gap-1">
               <button id="chat-stop" class="btn text-xs hidden" style="border-color: var(--err); color: var(--err)">■ stop</button>
-              <button id="chat-clear" class="btn text-xs">clear</button>
+              <button id="chat-export" class="btn text-xs" title="Экспорт чата в .md">📥 export</button>
+              <button id="chat-clear" class="btn text-xs" title="Очистить вид (история чата на сервере остаётся)">🗑 clear</button>
             </div>
           </div>
 
@@ -181,14 +186,17 @@
         </article>
 
         <!-- Files -->
-        <article class="glass rounded-2xl p-3 flex flex-col min-h-0">
+        <article id="files-panel" class="glass rounded-2xl p-3 flex flex-col min-h-0">
           <div class="flex items-center justify-between mb-2">
             <h2 class="font-display text-sm font-semibold tracking-wide">Files</h2>
             <div class="flex items-center gap-1">
+              <button id="files-upload-btn" class="btn text-xs" title="Загрузить файл с диска">⬆ upload</button>
               <button id="files-up" class="btn text-xs" title="Up">↑</button>
               <button id="files-refresh" class="btn text-xs" title="Refresh">↻</button>
             </div>
           </div>
+          <input id="files-upload-input" type="file" multiple class="hidden"
+                 accept=".py,.js,.ts,.tsx,.jsx,.html,.css,.scss,.json,.yaml,.yml,.toml,.txt,.md,.rst,.csv,.tsv,.sh,.bash,.bat,.ps1,.sql,.go,.rs,.c,.h,.cpp,.hpp,.java,.kt,.swift,.pine,.env,.cfg,.ini" />
           <div id="files-path" class="text-[11px] text-slate-400 font-mono break-all mb-1">/</div>
           <div id="files-list" class="scroll-y flex-1 space-y-0.5 pr-1 min-h-[150px]"></div>
           <div id="files-preview" class="hidden mt-2 pt-2 border-t border-white/5">

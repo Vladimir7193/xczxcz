@@ -206,6 +206,7 @@ table.signals tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
   display: flex;
   align-items: center;
   gap: .35rem;
+  justify-content: space-between;
 }
 .council-pane .body {
   font-size: 12.5px;
@@ -221,6 +222,71 @@ table.signals tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
   animation: caret 1s steps(2) infinite;
   margin-left: 4px;
 }
+
+/* Per-model accent colors. The base class is set on the pane via JS. */
+.council-pane[data-color="qwen"]     { background: linear-gradient(180deg, rgba(96,165,250,.10), rgba(96,165,250,.02)); border-color: rgba(96,165,250,.35); }
+.council-pane[data-color="qwen"]     .msg-model { background: rgba(96,165,250,.18); color: #93c5fd; }
+.council-pane[data-color="deepseek"] { background: linear-gradient(180deg, rgba(167,139,250,.10), rgba(167,139,250,.02)); border-color: rgba(167,139,250,.35); }
+.council-pane[data-color="deepseek"] .msg-model { background: rgba(167,139,250,.18); color: #c4b5fd; }
+.council-pane[data-color="llama"]    { background: linear-gradient(180deg, rgba(52,211,153,.10), rgba(52,211,153,.02)); border-color: rgba(52,211,153,.35); }
+.council-pane[data-color="llama"]    .msg-model { background: rgba(52,211,153,.18); color: #6ee7b7; }
+.council-pane[data-color="mistral"]  { background: linear-gradient(180deg, rgba(244,114,182,.10), rgba(244,114,182,.02)); border-color: rgba(244,114,182,.35); }
+.council-pane[data-color="mistral"]  .msg-model { background: rgba(244,114,182,.18); color: #f9a8d4; }
+.council-pane[data-color="gemma"]    { background: linear-gradient(180deg, rgba(251,191,36,.10), rgba(251,191,36,.02)); border-color: rgba(251,191,36,.35); }
+.council-pane[data-color="gemma"]    .msg-model { background: rgba(251,191,36,.18); color: #fcd34d; }
+.council-pane.synth { border-style: dashed; background: linear-gradient(180deg, rgba(34,211,238,.10), rgba(34,211,238,.02)); border-color: rgba(34,211,238,.5); }
+.council-pane.synth .msg-model { background: rgba(34,211,238,.18); color: #67e8f9; }
+
+/* Copy / action buttons inside a bubble or pane */
+.bubble-actions {
+  display: inline-flex; gap: .35rem; align-items: center;
+  font-size: 10px; color: var(--fg-1);
+}
+.bubble-actions button {
+  background: transparent; border: 1px solid var(--border);
+  border-radius: .35rem; padding: 1px 6px; cursor: pointer; color: inherit;
+  font-family: inherit; font-size: 10px;
+}
+.bubble-actions button:hover { color: var(--accent); border-color: var(--accent); }
+
+/* Code block rendering inside chat bubbles */
+.msg-bubble pre, .council-pane .body pre {
+  background: rgba(0,0,0,.45);
+  border: 1px solid var(--border);
+  border-radius: .5rem;
+  padding: .55rem .7rem;
+  margin: .35rem 0;
+  overflow-x: auto;
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  position: relative;
+}
+.msg-bubble pre code, .council-pane .body pre code { background: transparent; padding: 0; color: var(--fg-0); }
+.msg-bubble code, .council-pane .body code {
+  background: rgba(255,255,255,.06);
+  padding: 1px 5px; border-radius: .3rem;
+  font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  color: var(--accent);
+}
+.msg-bubble pre .lang, .council-pane .body pre .lang {
+  position: absolute; top: 4px; right: 8px;
+  font-size: 10px; color: var(--fg-1); text-transform: uppercase; letter-spacing: .05em;
+}
+.code-copy {
+  position: absolute; top: 4px; right: 50px;
+  font-size: 10px; padding: 1px 6px; border-radius: .3rem;
+  background: rgba(255,255,255,.05); border: 1px solid var(--border); color: var(--fg-1);
+  cursor: pointer;
+}
+.code-copy:hover { color: var(--accent); border-color: var(--accent); }
+
+/* Token highlighting (dead-simple) */
+.tk-kw { color: #f472b6; }
+.tk-str { color: #6ee7b7; }
+.tk-num { color: #fcd34d; }
+.tk-com { color: #94a3b8; font-style: italic; }
+.tk-fn  { color: #60a5fa; }
 @keyframes caret { 50% { opacity: 0; } }
 
 /* Files */
