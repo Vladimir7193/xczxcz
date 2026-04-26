@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WAVE Scanner — AI Dashboard</title>
+  <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='24' font-size='24'>🌊</text></svg>" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            mono: ['"JetBrains Mono"', '"Fira Code"', 'Menlo', 'Consolas', 'monospace'],
+            display: ['"Inter"', 'system-ui', 'sans-serif'],
+          },
+          colors: {
+            ink: { 950: '#05060a', 900: '#0a0d14', 800: '#11151f', 700: '#1a2030' },
+            neon: { cyan: '#22d3ee', mint: '#34d399', violet: '#a78bfa', pink: '#f472b6', amber: '#fbbf24' },
+          },
+          boxShadow: {
+            glow: '0 0 30px -8px rgba(34, 211, 238, .55)',
+          },
+        }
+      }
+    };
+  </script>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body data-mode="full" data-view="council">
+  <div class="min-h-screen flex">
+    <!-- Sidebar -->
+    <aside id="sidebar" class="nav glass m-3 rounded-2xl p-3 w-60 shrink-0 hidden md:flex md:flex-col">
+      <div class="flex items-center justify-between mb-4 px-1">
+        <div class="flex items-center gap-2 min-w-0">
+          <div class="text-2xl">🌊</div>
+          <div class="label min-w-0">
+            <div class="font-display text-sm font-semibold tracking-wide truncate">WAVE Scanner</div>
+            <div class="text-[11px] text-slate-400 truncate">AI Council Dashboard</div>
+          </div>
+        </div>
+        <button id="sidebar-toggle" class="btn !p-1.5" title="Свернуть/развернуть">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l-6 6 6 6"/><path d="M21 6l-6 6 6 6"/></svg>
+        </button>
+      </div>
+
+      <nav class="space-y-1">
+        <div class="nav-item active" data-view="council">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span class="label text-sm">AI Council</span>
+        </div>
+        <div class="nav-item" data-view="health">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg>
+          <span class="label text-sm">System Health</span>
+        </div>
+        <div class="nav-item" data-view="logs">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>
+          <span class="label text-sm">Live Logs</span>
+        </div>
+        <div class="nav-item" data-view="signals">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+          <span class="label text-sm">Signals</span>
+        </div>
+        <div class="nav-item" data-view="terminal">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>
+          <span class="label text-sm">Command Center</span>
+        </div>
+      </nav>
+
+      <div class="mt-6 px-1 label">
+        <div class="text-[11px] uppercase tracking-wider text-slate-500 mb-2">Layout</div>
+        <div class="flex gap-1">
+          <button class="btn flex-1 justify-center text-xs" data-mode="full">Full</button>
+          <button class="btn flex-1 justify-center text-xs" data-mode="clean">Clean</button>
+        </div>
+        <div class="text-[11px] uppercase tracking-wider text-slate-500 mt-4 mb-2">Theme</div>
+        <div class="flex gap-1">
+          <button class="btn flex-1 justify-center text-xs" data-theme="dark">Dark</button>
+          <button class="btn flex-1 justify-center text-xs" data-theme="matrix">Matrix</button>
+          <button class="btn flex-1 justify-center text-xs" data-theme="light">Light</button>
+        </div>
+      </div>
+
+      <div class="mt-auto pt-4 px-1 label text-[11px] text-slate-500">
+        <div>Ollama: <span id="ollama-state" class="text-slate-300">checking…</span></div>
+        <div>Workspace: <span id="ws-root" class="text-slate-300 font-mono break-all">—</span></div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="flex-1 min-w-0 p-3 md:p-4 flex flex-col">
+      <!-- Top bar -->
+      <header class="glass rounded-2xl p-3 md:p-4 flex items-center gap-3 fade-in shrink-0">
+        <button id="sidebar-burger" class="btn md:hidden !p-2" title="Меню">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <div class="flex items-center gap-2">
+          <span id="ws-dot" class="dot warn"></span>
+          <span class="text-sm">
+            <span id="ws-status" class="text-slate-300">connecting…</span>
+            <span class="text-slate-500"> · </span>
+            <span id="clients-count" class="text-slate-400">0 clients</span>
+          </span>
+        </div>
+        <div class="ml-auto flex items-center gap-3 text-xs text-slate-400">
+          <span id="utc-clock" class="font-mono"></span>
+          <span class="hidden md:inline">·</span>
+          <span class="hidden md:inline">uptime <span id="uptime" class="font-mono text-slate-300">—</span></span>
+          <span class="hidden lg:inline">·</span>
+          <span class="hidden lg:inline">CPU <span id="cpu-pct-mini" class="font-mono text-slate-300">—</span>%</span>
+          <span class="hidden lg:inline">MEM <span id="mem-pct-mini" class="font-mono text-slate-300">—</span>%</span>
+        </div>
+      </header>
+
+      <!-- ===================== AI COUNCIL VIEW ===================== -->
+      <section id="view-council" class="view flex-1 mt-3 md:mt-4 grid gap-3 md:gap-4 grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_280px] fade-in">
+        <!-- Conversations -->
+        <article class="glass rounded-2xl p-3 flex flex-col min-h-0">
+          <div class="flex items-center justify-between mb-2">
+            <h2 class="font-display text-sm font-semibold tracking-wide">Chats</h2>
+            <button id="conv-new" class="btn text-xs">+ New</button>
+          </div>
+          <div id="conv-list" class="scroll-y flex-1 space-y-1 pr-1 min-h-[150px]"></div>
+        </article>
+
+        <!-- Council chat -->
+        <article class="glass rounded-2xl p-3 md:p-4 flex flex-col min-h-0">
+          <!-- Toolbar -->
+          <div class="flex flex-wrap items-center gap-2 mb-3">
+            <div class="flex items-center gap-1 glass rounded-full p-1">
+              <button class="btn-mode active text-xs" data-chat-mode="council">⚖ Council</button>
+              <button class="btn-mode text-xs" data-chat-mode="solo">🎯 Solo</button>
+            </div>
+            <div class="relative">
+              <button id="model-picker-btn" class="btn text-xs">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14.5 14.5 0 0 1 0 18M12 3a14.5 14.5 0 0 0 0 18"/></svg>
+                <span id="model-picker-label">Models (0)</span>
+              </button>
+              <div id="model-picker" class="hidden absolute top-full mt-1 left-0 z-30 w-72 glass rounded-xl p-2 shadow-xl">
+                <div class="flex items-center justify-between mb-1 px-1">
+                  <div class="text-xs text-slate-400">Pick models</div>
+                  <button id="model-refresh" class="btn text-[11px] !py-0.5">↻ refresh</button>
+                </div>
+                <div id="model-list" class="space-y-1 max-h-72 overflow-auto"></div>
+                <div id="model-help" class="text-[11px] text-amber-300 mt-2 px-1 hidden"></div>
+              </div>
+            </div>
+            <button id="prompt-toggle" class="btn text-xs">⚙ System prompt</button>
+            <label class="text-xs flex items-center gap-1 select-none cursor-pointer" title="После ответов всех моделей первая выдаёт консенсус">
+              <input id="synth-toggle" type="checkbox" class="accent-cyan-400" checked />
+              <span>🧠 synthesize</span>
+            </label>
+            <span id="attached-count" class="pill" style="background:rgba(167,139,250,.15);color:var(--accent-2)">0 files attached</span>
+            <div class="ml-auto flex items-center gap-1">
+              <button id="chat-stop" class="btn text-xs hidden" style="border-color: var(--err); color: var(--err)">■ stop</button>
+              <button id="chat-export" class="btn text-xs" title="Экспорт чата в .md">📥 export</button>
+              <button id="chat-clear" class="btn text-xs" title="Очистить вид (история чата на сервере остаётся)">🗑 clear</button>
+            </div>
+          </div>
+
+          <div id="prompt-block" class="hidden mb-3">
+            <textarea id="system-prompt" rows="2"
+              placeholder="System prompt — общие правила обсуждения, например: «Ты опытный Python-разработчик. Объясняй коротко и по делу»."
+              class="w-full glass rounded-lg p-2 text-sm bg-transparent outline-none resize-y"></textarea>
+          </div>
+
+          <!-- Messages -->
+          <div id="chat-stream" class="scroll-y flex-1 space-y-3 pr-1 min-h-0"></div>
+
+          <!-- Composer -->
+          <div class="mt-3 pt-3 border-t border-white/5">
+            <div id="attached-list" class="flex flex-wrap gap-1 mb-2"></div>
+            <div class="flex items-end gap-2">
+              <textarea id="chat-input" rows="2"
+                class="flex-1 glass rounded-xl p-2 text-sm bg-transparent outline-none resize-none"
+                placeholder="Спроси совет у моделей…  (Enter — отправить, Shift+Enter — перенос строки)"></textarea>
+              <button id="chat-send" class="btn !px-4 !py-2 text-sm" style="border-color: var(--accent); color: var(--accent)">
+                Send →
+              </button>
+            </div>
+            <div class="text-[11px] text-slate-500 mt-1">
+              <kbd>Enter</kbd> отправить · <kbd>Shift+Enter</kbd> новая строка ·
+              можно прикреплять файлы из правой панели
+            </div>
+          </div>
+        </article>
+
+        <!-- Files -->
+        <article id="files-panel" class="glass rounded-2xl p-3 flex flex-col min-h-0">
+          <div class="flex items-center justify-between mb-2">
+            <h2 class="font-display text-sm font-semibold tracking-wide">Files</h2>
+            <div class="flex items-center gap-1">
+              <button id="files-upload-btn" class="btn text-xs" title="Загрузить файл с диска">⬆ upload</button>
+              <button id="files-up" class="btn text-xs" title="Up">↑</button>
+              <button id="files-refresh" class="btn text-xs" title="Refresh">↻</button>
+            </div>
+          </div>
+          <input id="files-upload-input" type="file" multiple class="hidden"
+                 accept=".py,.js,.ts,.tsx,.jsx,.html,.css,.scss,.json,.yaml,.yml,.toml,.txt,.md,.rst,.csv,.tsv,.sh,.bash,.bat,.ps1,.sql,.go,.rs,.c,.h,.cpp,.hpp,.java,.kt,.swift,.pine,.env,.cfg,.ini" />
+          <div id="files-path" class="text-[11px] text-slate-400 font-mono break-all mb-1">/</div>
+          <div id="files-list" class="scroll-y flex-1 space-y-0.5 pr-1 min-h-[150px]"></div>
+          <div id="files-preview" class="hidden mt-2 pt-2 border-t border-white/5">
+            <div class="flex items-center justify-between mb-1">
+              <div id="files-preview-name" class="text-[11px] font-mono text-slate-400 truncate"></div>
+              <div class="flex items-center gap-1">
+                <button id="files-attach" class="btn text-[11px]" style="border-color: var(--accent); color: var(--accent)">+ attach</button>
+                <button id="files-preview-close" class="btn text-[11px]">×</button>
+              </div>
+            </div>
+            <pre id="files-preview-body" class="text-[11px] bg-black/30 rounded-md p-2 max-h-44 overflow-auto whitespace-pre-wrap"></pre>
+          </div>
+        </article>
+      </section>
+
+      <!-- ===================== HEALTH VIEW ===================== -->
+      <section id="view-health" class="view hidden flex-1 mt-3 md:mt-4 grid gap-3 md:gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 auto-rows-min fade-in">
+        <article id="card-health" class="glass rounded-2xl p-4">
+          <div class="flex items-center justify-between mb-2">
+            <h2 class="font-display text-sm font-semibold tracking-wide">System Health</h2>
+            <span class="pill" style="background: rgba(34,211,238,.12); color: var(--accent)">live</span>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <div class="flex items-baseline justify-between">
+                <span class="text-xs text-slate-400">CPU</span>
+                <span class="text-lg font-mono"><span id="cpu-pct">—</span>%</span>
+              </div>
+              <div class="gauge mt-1"><div id="cpu-bar" style="width:0%"></div></div>
+              <svg id="cpu-spark" class="spark mt-2" preserveAspectRatio="none" viewBox="0 0 100 36"></svg>
+            </div>
+            <div>
+              <div class="flex items-baseline justify-between">
+                <span class="text-xs text-slate-400">Memory</span>
+                <span class="text-lg font-mono"><span id="mem-pct">—</span>%</span>
+              </div>
+              <div class="gauge mt-1"><div id="mem-bar" style="width:0%"></div></div>
+              <svg id="mem-spark" class="spark mt-2" preserveAspectRatio="none" viewBox="0 0 100 36"></svg>
+            </div>
+          </div>
+          <div class="mt-3 grid grid-cols-3 gap-2 text-xs">
+            <div class="glass rounded-xl p-2"><div class="text-slate-400">Disk</div><div class="font-mono"><span id="disk-pct">—</span>%</div></div>
+            <div class="glass rounded-xl p-2"><div class="text-slate-400">Load 1m</div><div class="font-mono" id="load-1">—</div></div>
+            <div class="glass rounded-xl p-2"><div class="text-slate-400">Procs</div><div class="font-mono" id="procs">—</div></div>
+          </div>
+        </article>
+        <article class="glass rounded-2xl p-4 md:col-span-2">
+          <h2 class="font-display text-sm font-semibold tracking-wide mb-2">CPU history</h2>
+          <svg id="cpu-spark-big" class="w-full h-40" preserveAspectRatio="none" viewBox="0 0 100 36"></svg>
+        </article>
+      </section>
+
+      <!-- ===================== LOGS VIEW ===================== -->
+      <section id="view-logs" class="view hidden flex-1 mt-3 md:mt-4 fade-in">
+        <article class="glass rounded-2xl p-4 h-full flex flex-col">
+          <div class="flex items-center justify-between mb-2 shrink-0">
+            <h2 class="font-display text-sm font-semibold tracking-wide">Live Log Feed</h2>
+            <div class="flex items-center gap-2">
+              <input id="log-filter" placeholder="filter…" class="bg-transparent border border-white/10 rounded-md px-2 py-1 text-xs w-32 focus:outline-none focus:border-cyan-400" />
+              <label class="text-xs text-slate-400 flex items-center gap-1"><input id="log-autoscroll" type="checkbox" checked class="accent-cyan-400"/> autoscroll</label>
+              <button id="log-clear" class="btn text-xs">Clear</button>
+            </div>
+          </div>
+          <div id="log-container" class="scroll-y flex-1 pr-2"></div>
+        </article>
+      </section>
+
+      <!-- ===================== SIGNALS VIEW ===================== -->
+      <section id="view-signals" class="view hidden flex-1 mt-3 md:mt-4 fade-in">
+        <article class="glass rounded-2xl p-4 h-full flex flex-col">
+          <div class="flex items-center justify-between mb-2 shrink-0">
+            <h2 class="font-display text-sm font-semibold tracking-wide">Signals (logs/signals.csv)</h2>
+            <div class="flex items-center gap-2">
+              <span id="signals-count" class="text-xs text-slate-400">0</span>
+              <button id="signals-refresh" class="btn text-xs">Refresh</button>
+            </div>
+          </div>
+          <div class="scroll-y flex-1">
+            <table class="signals">
+              <thead>
+                <tr>
+                  <th>time</th><th>symbol</th><th>dir</th><th>score</th><th>RR</th><th>entry</th><th>SL</th><th>TP1</th><th>TP2</th><th>TP3</th><th>session</th><th>label</th>
+                </tr>
+              </thead>
+              <tbody id="signals-body">
+                <tr><td colspan="12" class="text-center text-slate-500 py-6">no signals yet</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <!-- ===================== TERMINAL VIEW ===================== -->
+      <section id="view-terminal" class="view hidden flex-1 mt-3 md:mt-4 fade-in">
+        <article class="glass rounded-2xl p-4 h-full flex flex-col">
+          <div class="flex items-center justify-between mb-2 shrink-0">
+            <h2 class="font-display text-sm font-semibold tracking-wide">AI Command Center</h2>
+            <div class="text-xs text-slate-400">type <code class="text-cyan-300">help</code> · ↑/↓ history · Enter to run</div>
+          </div>
+          <div class="term p-3 flex-1 flex flex-col">
+            <div id="term-out" class="term-out scroll-y flex-1"></div>
+            <div class="flex items-center gap-2 mt-2 pt-2 border-t border-white/10 shrink-0">
+              <span class="term-prompt">›</span>
+              <input id="term-input" class="term-input" autocomplete="off" spellcheck="false"
+                     placeholder="get logs 50 · status · clean mode · theme matrix · refresh" />
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <footer class="text-center text-xs text-slate-500 mt-4 pb-2 shrink-0">
+        WAVE Scanner Dashboard · FastAPI + WebSocket + Ollama · <span class="text-slate-400">AI Council</span>
+      </footer>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
