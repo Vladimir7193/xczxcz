@@ -167,7 +167,7 @@
         <tr>
           <td class="text-slate-400">${escapeHtml((r.timestamp || "").slice(0, 19))}</td>
           <td>${escapeHtml(r.symbol || "")}</td>
-          <td class="dir-${dir}">${dir}</td>
+          <td class="dir-${escapeHtml(dir)}">${escapeHtml(dir)}</td>
           <td>${escapeHtml(r.score || "")}</td>
           <td>${fmt(r.rr_ratio, 2)}</td>
           <td>${fmt(r.entry_price)}</td>

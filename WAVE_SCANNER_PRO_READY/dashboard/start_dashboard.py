@@ -63,9 +63,16 @@ def main(argv: list[str] | None = None) -> None:
         _open_browser_when_ready(url)
 
     # Re-inject the resolved port so server.main() doesn't search again.
+    # If --port was supplied but the requested port was busy, replace its value
+    # with the resolved fallback port — otherwise uvicorn would try to bind to
+    # the busy port we already opened the browser on.
     if "--port" not in argv:
-        argv += ["--port", str(port), "--no-port-fallback"]
-    elif "--no-port-fallback" not in argv:
+        argv += ["--port", str(port)]
+    else:
+        idx = argv.index("--port")
+        if idx + 1 < len(argv):
+            argv[idx + 1] = str(port)
+    if "--no-port-fallback" not in argv:
         argv += ["--no-port-fallback"]
 
     server_main(argv)

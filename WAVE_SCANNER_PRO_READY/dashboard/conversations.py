@@ -75,8 +75,8 @@ class ConversationStore:
             messages=list(data.get("messages") or []),
         )
 
-    def create(self, title: str = "") -> Conversation:
-        cid = uuid.uuid4().hex[:12]
+    def create(self, title: str = "", conv_id: str | None = None) -> Conversation:
+        cid = conv_id if (conv_id and _SAFE_ID.match(conv_id)) else uuid.uuid4().hex[:12]
         now = time.time()
         conv = Conversation(id=cid, title=title or "New chat", created_at=now,
                             updated_at=now, messages=[])
@@ -91,7 +91,10 @@ class ConversationStore:
         tmp.replace(path)
 
     def append(self, conv_id: str, message: Dict[str, Any]) -> Conversation:
-        conv = self.get(conv_id) or self.create()
+        # If the conversation went missing (e.g. deleted between creation and the
+        # streaming response completing), recreate it under the *same* id so the
+        # user-message and assistant-response don't end up in separate orphans.
+        conv = self.get(conv_id) or self.create(conv_id=conv_id)
         conv.messages.append(message)
         if conv.title in {"", "New chat"}:
             user_first = next((m for m in conv.messages if m.get("role") == "user"), None)
