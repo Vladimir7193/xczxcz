@@ -598,45 +598,63 @@
     "interface","type","enum","struct","fn","mut","pub","use","mod","impl","Self","self","in",
     "of","throw","switch","case","default","extends","implements","package","go","defer","chan",
   ]);
-  // Single-pass tokenizer. We MUST NOT chain multiple .replace() calls here:
-  // earlier passes insert spans like `<span class="tk-str">`, and later passes
-  // (e.g. the keyword pass) would re-match the literal word `class` *inside*
-  // those spans, producing nested broken markup that the browser renders as
-  // visible text (`class="tk-com">…`). One regex with alternatives, one pass.
+  // Tokenize the RAW source (not the escaped HTML) and escape per-segment.
+  //
+  // History: an earlier version chained five .replace() calls on already-
+  // tokenized HTML, and the keyword pass re-matched the word `class` inside
+  // the spans it had just inserted, breaking markup. The follow-up moved to
+  // a single-pass regex but operated on HTML-escaped text — which broke on
+  // `&#39;` (the `#` got eaten as a comment) and `&quot;` (string regex
+  // couldn't cross `&`).
+  //
+  // The right separation: tokenize raw source, then escape (a) every gap
+  // between tokens and (b) the inner text of every token. Inserted span
+  // tags are never visible to the regex and never re-escaped.
   function highlightCode(src) {
-    const escaped = escapeHtml(src);
     const tokenRe = new RegExp(
       [
-        '(&quot;[^&\\n]*?&quot;|&#39;[^&\\n]*?&#39;|`[^`\\n]*?`)', // 1: strings
-        // Line comments. We support `#` and `//` anywhere on a line (both
-        // happily appear inline: `x = 1  # foo`, `let y = 2; // foo`). We
-        // do NOT support SQL/Lua/Haskell `--` here because the tokenizer
-        // would then eat the JavaScript decrement operator (`i--`, `--i`)
-        // and consume the rest of the line as a comment. SQL highlighting
-        // is a fair price to pay for not breaking JS/C-family code, which
-        // is the overwhelming majority of what the council pastes.
-        '(#[^\\n]*|\\/\\/[^\\n]*)',                                // 2: line comments
+        '("(?:\\\\.|[^"\\\\\\n])*"|\'(?:\\\\.|[^\'\\\\\\n])*\'|`(?:\\\\.|[^`\\\\\\n])*`)', // 1: strings (with backslash escapes)
+        // Line comments. `#` (Python/shell) and `//` (C/JS) match anywhere
+        // on a line so inline comments work: `x = 1  # foo`, `let y; // bar`.
+        // We do NOT include SQL/Lua `--` because that would eat the JS
+        // decrement operator (`i--`, `--i`) and consume the rest of the line.
+        '(#[^\\n]*|//[^\\n]*)',                                    // 2: line comments
         '(\\b\\d+(?:\\.\\d+)?\\b)',                                 // 3: numbers
         '\\b([A-Za-z_][A-Za-z0-9_]*)(\\s*\\()',                     // 4+5: fn call name + tail
-        '(\\b[A-Za-z_][A-Za-z0-9_]*\\b)',                           // 6: identifier (maybe keyword)
+        '(\\b[A-Za-z_][A-Za-z0-9_]*\\b)',                           // 6: identifier (keyword?)
       ].join('|'),
       'g'
     );
-    return escaped.replace(tokenRe, (m, str, com, num, fnName, fnTail, ident) => {
-      if (str !== undefined) return `<span class="tk-str">${str}</span>`;
-      if (com !== undefined) return `<span class="tk-com">${com}</span>`;
-      if (num !== undefined) return `<span class="tk-num">${num}</span>`;
-      if (fnName !== undefined) {
-        // Keyword used as a call (rare in real code: `if(`, `for(` in C-like)
-        // — render as keyword, not function, so coloring stays accurate.
-        if (MD_KEYWORDS.has(fnName)) return `<span class="tk-kw">${fnName}</span>${fnTail}`;
-        return `<span class="tk-fn">${fnName}</span>${fnTail}`;
+    let out = "";
+    let last = 0;
+    let m;
+    while ((m = tokenRe.exec(src)) !== null) {
+      if (m.index > last) out += escapeHtml(src.slice(last, m.index));
+      const [whole, str, com, num, fnName, fnTail, ident] = m;
+      if (str !== undefined) {
+        out += `<span class="tk-str">${escapeHtml(str)}</span>`;
+      } else if (com !== undefined) {
+        out += `<span class="tk-com">${escapeHtml(com)}</span>`;
+      } else if (num !== undefined) {
+        out += `<span class="tk-num">${escapeHtml(num)}</span>`;
+      } else if (fnName !== undefined) {
+        // Keyword used as a call (`if(`, `for(`) — render as keyword, not fn.
+        const cls = MD_KEYWORDS.has(fnName) ? "tk-kw" : "tk-fn";
+        out += `<span class="${cls}">${escapeHtml(fnName)}</span>${escapeHtml(fnTail)}`;
+      } else if (ident !== undefined) {
+        out += MD_KEYWORDS.has(ident)
+          ? `<span class="tk-kw">${escapeHtml(ident)}</span>`
+          : escapeHtml(ident);
+      } else {
+        out += escapeHtml(whole);
       }
-      if (ident !== undefined) {
-        return MD_KEYWORDS.has(ident) ? `<span class="tk-kw">${ident}</span>` : ident;
-      }
-      return m;
-    });
+      last = tokenRe.lastIndex;
+      // Guard against zero-width matches (shouldn't happen with these patterns
+      // but cheap to defend).
+      if (m.index === tokenRe.lastIndex) tokenRe.lastIndex++;
+    }
+    if (last < src.length) out += escapeHtml(src.slice(last));
+    return out;
   }
   function renderMarkdown(text) {
     const placeholders = [];
