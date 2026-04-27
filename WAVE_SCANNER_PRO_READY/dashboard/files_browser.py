@@ -142,3 +142,114 @@ def read_text(ws: Workspace, rel: str, max_bytes: int = MAX_READ_BYTES) -> Dict[
         "max_bytes": max_bytes,
         "content": text,
     }
+
+
+# Default cap for recursive walks. The dashboard sends every attached file's
+# bytes inline in the system prompt, and local models choke on multi-megabyte
+# contexts, so we hard-cap both file count and total size.
+WALK_MAX_FILES = 200
+WALK_MAX_TOTAL_BYTES = 4 * 1024 * 1024  # 4 MB
+
+
+def walk_text_files(
+    ws: Workspace,
+    rel: str = "",
+    *,
+    max_files: int = WALK_MAX_FILES,
+    max_total_bytes: int = WALK_MAX_TOTAL_BYTES,
+) -> Dict[str, Any]:
+    """Recursively list text files under ``rel``. Returns metadata only — the
+    UI calls ``/api/files/read`` for each file's contents.
+    """
+    target = ws.resolve(rel)
+    if not target.exists():
+        raise FileNotFoundError(rel)
+    if not target.is_dir():
+        raise NotADirectoryError(rel)
+
+    entries: List[Dict[str, Any]] = []
+    total_bytes = 0
+    truncated = False
+    skipped_binary = 0
+
+    for dirpath, dirnames, filenames in os.walk(target):
+        # Filter SKIP_DIRS in-place so os.walk doesn't descend into them.
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
+        for name in sorted(filenames):
+            child = Path(dirpath) / name
+            try:
+                if not ws.is_text_file(child):
+                    skipped_binary += 1
+                    continue
+                size = child.stat().st_size
+            except OSError:
+                continue
+            if len(entries) >= max_files or total_bytes + size > max_total_bytes:
+                truncated = True
+                break
+            entries.append({
+                "path": ws.relpath(child),
+                "size": size,
+            })
+            total_bytes += size
+        if truncated:
+            break
+
+    return {
+        "ok": True,
+        "root": str(ws.root),
+        "path": ws.relpath(target),
+        "files": entries,
+        "total_bytes": total_bytes,
+        "count": len(entries),
+        "truncated": truncated,
+        "skipped_binary": skipped_binary,
+        "max_files": max_files,
+        "max_total_bytes": max_total_bytes,
+    }
+
+
+# Cap per-write payload. Beyond this, the frontend should split.
+WRITE_MAX_BYTES = 1024 * 1024  # 1 MB
+
+
+def write_text(ws: Workspace, rel: str, content: str) -> Dict[str, Any]:
+    """Write ``content`` to ``rel`` under the workspace.
+
+    The path is sandboxed via :meth:`Workspace.resolve`, so it cannot escape
+    the workspace root. Refuses paths that would create binary-named files
+    (extension whitelist, same as read) so a stray write to ``main.exe`` or
+    ``data.bin`` fails loudly. Always replaces the file (no append mode) —
+    we want apply-edit semantics, not log-streaming.
+    """
+    target = ws.resolve(rel)
+    if target.is_dir():
+        raise IsADirectoryError(rel)
+    # Refuse paths whose extension we'd refuse to read back, otherwise the
+    # apply→reread roundtrip is asymmetric and confusing.
+    if target.suffix and target.suffix.lower() not in TEXT_EXTENSIONS:
+        raise ValueError(f"refusing to write non-text extension: {target.suffix}")
+    encoded = content.encode("utf-8")
+    if len(encoded) > WRITE_MAX_BYTES:
+        raise ValueError(
+            f"content too large: {len(encoded)} bytes > {WRITE_MAX_BYTES} cap"
+        )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    # Atomic-ish write: temp file in same dir, then rename. Avoids leaving a
+    # half-written file on crash.
+    tmp = target.with_suffix(target.suffix + ".tmp~")
+    try:
+        with tmp.open("wb") as fh:
+            fh.write(encoded)
+        tmp.replace(target)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+    return {
+        "ok": True,
+        "path": ws.relpath(target),
+        "bytes": len(encoded),
+    }

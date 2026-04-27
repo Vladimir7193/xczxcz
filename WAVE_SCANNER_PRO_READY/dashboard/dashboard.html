@@ -152,6 +152,7 @@
               <span>🧠 synthesize</span>
             </label>
             <span id="attached-count" class="pill" style="background:rgba(167,139,250,.15);color:var(--accent-2)" title="Сколько файлов реально летит в модель">0 files attached</span>
+            <span id="attached-budget" class="pill hidden" style="background:rgba(167,139,250,.10);color:var(--accent-2)" title="Грубая оценка контекста: chars/4. Если ~> num_ctx — модель обрежет хвост."></span>
             <div class="ml-auto flex items-center gap-1">
               <button id="chat-stop" class="btn text-xs hidden" style="border-color: var(--err); color: var(--err)">■ stop</button>
               <button id="chat-export" class="btn text-xs" title="Экспорт чата в .md">📥 export</button>
@@ -244,6 +245,7 @@
           <div class="flex items-center justify-between mb-2">
             <h2 class="font-display text-sm font-semibold tracking-wide">Files</h2>
             <div class="flex items-center gap-1">
+              <button id="files-attach-folder" class="btn text-xs" title="Прицепить ВСЕ текстовые файлы из текущей папки рекурсивно (max 200 файлов / 4 МБ)">📁 attach folder</button>
               <button id="files-upload-btn" class="btn text-xs" title="Загрузить файл с диска">⬆ upload</button>
               <button id="files-up" class="btn text-xs" title="Up">↑</button>
               <button id="files-refresh" class="btn text-xs" title="Refresh">↻</button>

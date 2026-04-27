@@ -37,7 +37,14 @@ import sys as _sys
 _sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from conversations import ConversationStore
-from files_browser import PathOutsideWorkspace, Workspace, list_dir, read_text
+from files_browser import (
+    PathOutsideWorkspace,
+    Workspace,
+    list_dir,
+    read_text,
+    walk_text_files,
+    write_text,
+)
 from ollama_client import (
     DEFAULT_BASE_URL as OLLAMA_BASE_URL,
     ChatMessage,
@@ -477,6 +484,52 @@ async def api_files_read(path: str) -> Dict[str, Any]:
         raise HTTPException(status_code=415, detail=str(e))
     except Exception as e:
         logger.exception("files/read failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/files/walk")
+async def api_files_walk(path: str = "") -> Dict[str, Any]:
+    """Recursive list of every text file under ``path`` (within workspace).
+
+    Backs the "📁 attach folder" UI flow. Returns metadata only — the
+    frontend then calls /api/files/read for each file to bundle them into
+    the system prompt's attached-files block.
+    """
+    try:
+        return walk_text_files(get_workspace(), path)
+    except (PathOutsideWorkspace, PermissionError) as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except (FileNotFoundError, NotADirectoryError) as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.exception("files/walk failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class FileWriteRequest(BaseModel):
+    path: str
+    content: str
+
+
+@app.post("/api/files/write")
+async def api_files_write(payload: FileWriteRequest) -> Dict[str, Any]:
+    """Write ``content`` to ``path`` inside the workspace.
+
+    Backs the "✅ Apply" button on edit-block diff views. Sandboxed to the
+    workspace root by Workspace.resolve(). Refuses non-text extensions.
+    """
+    if not payload.path or payload.path.strip() in {".", "/", ""}:
+        raise HTTPException(status_code=400, detail="path is required")
+    try:
+        return write_text(get_workspace(), payload.path, payload.content)
+    except (PathOutsideWorkspace, PermissionError) as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except (IsADirectoryError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=415, detail=str(e))
+    except Exception as e:
+        logger.exception("files/write failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 
