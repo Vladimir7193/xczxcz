@@ -92,6 +92,7 @@
     // chat
     selectedModels: new Set(),
     availableModels: [],
+    providers: [], // [{name, label, available, reason, base_url, is_local}]
     chatMode: "council",
     synthesize: true,
     conversationId: null,
@@ -394,25 +395,59 @@
         return;
       }
       state.availableModels = j.models || [];
-      setText("ollama-state", `${state.availableModels.length} models`);
+      state.providers = j.providers || [];
+      const localModels = state.availableModels.filter((m) => (m.provider || "ollama") === "ollama").length;
+      const cloudModels = state.availableModels.length - localModels;
+      const stateLabel = cloudModels > 0
+        ? `${state.availableModels.length} models (${localModels} local · ${cloudModels} cloud)`
+        : `${state.availableModels.length} models`;
+      setText("ollama-state", stateLabel);
       renderModelList();
     } catch (e) {
       setText("ollama-state", "error");
       if (list) list.innerHTML = `<div class="text-xs text-rose-300 px-1 py-1">${escapeHtml(String(e))}</div>`;
     }
   }
+  // Visual badge per provider in the model picker. Keeps the list scannable
+  // when local + cloud models are mixed together.
+  const PROVIDER_BADGE = {
+    ollama:     { icon: "🏠", color: "#a78bfa", label: "local" },
+    groq:       { icon: "⚡", color: "#f97316", label: "groq" },
+    openai:     { icon: "🟢", color: "#10b981", label: "openai" },
+    openrouter: { icon: "🛰", color: "#22d3ee", label: "openrouter" },
+    deepinfra:  { icon: "🧊", color: "#60a5fa", label: "deepinfra" },
+    together:   { icon: "🤝", color: "#f472b6", label: "together" },
+  };
+  function renderProvidersHeader() {
+    if (!state.providers.length) return "";
+    const chips = state.providers.map((p) => {
+      const badge = PROVIDER_BADGE[p.name] || { icon: "?", color: "#94a3b8", label: p.name };
+      const cls = p.available ? "" : "opacity-40 line-through";
+      const title = p.available ? `${p.label} · ${p.base_url}` : `${p.label} · ${p.reason}`;
+      return `<span class="text-[10px] px-1.5 py-0.5 rounded ${cls}" style="background:${badge.color}1a;color:${badge.color}" title="${escapeHtml(title)}">${badge.icon} ${escapeHtml(badge.label)}</span>`;
+    }).join("");
+    const missing = state.providers.filter((p) => !p.available && !p.is_local);
+    const hint = missing.length
+      ? `<div class="text-[10px] text-slate-500 mt-1">tip: set <code>${missing.map((p) => p.reason.split(" ")[0]).join("</code> / <code>")}</code> в окружение → дашборд подцепит облачные модели</div>`
+      : "";
+    return `<div class="px-1 pb-1 mb-1 border-b border-white/5"><div class="flex flex-wrap gap-1">${chips}</div>${hint}</div>`;
+  }
   function renderModelList() {
     const list = $("#model-list"); if (!list) return;
     if (!state.availableModels.length) {
-      list.innerHTML = `<div class="text-xs text-slate-400 px-1 py-1">no models · run <code class="text-cyan-300">ollama pull llama3</code></div>`;
+      list.innerHTML = renderProvidersHeader() +
+        `<div class="text-xs text-slate-400 px-1 py-1">no models · run <code class="text-cyan-300">ollama pull llama3</code></div>`;
       return;
     }
-    list.innerHTML = state.availableModels.map((m) => {
+    list.innerHTML = renderProvidersHeader() + state.availableModels.map((m) => {
       const checked = state.selectedModels.has(m.name) ? "checked" : "";
       const meta = [m.parameter_size, m.quantization_level].filter(Boolean).join(" · ");
+      const prov = m.provider || "ollama";
+      const badge = PROVIDER_BADGE[prov] || PROVIDER_BADGE.ollama;
       return `
         <label class="flex items-center gap-2 px-1 py-1 rounded hover:bg-white/5 cursor-pointer">
           <input type="checkbox" class="accent-cyan-400 model-cb" value="${escapeHtml(m.name)}" ${checked} />
+          <span class="text-[11px]" style="color:${badge.color}" title="${escapeHtml(badge.label)}">${badge.icon}</span>
           <span class="font-mono text-xs flex-1 truncate">${escapeHtml(m.name)}</span>
           <span class="text-[10px] text-slate-400">${escapeHtml(meta)}</span>
         </label>`;
