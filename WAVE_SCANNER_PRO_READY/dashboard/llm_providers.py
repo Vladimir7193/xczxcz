@@ -61,12 +61,14 @@ class LLMError(RuntimeError):
 class ProviderInfo:
     """Lightweight description of a configured provider for the UI."""
 
-    name: str           # "ollama", "groq", "openai", ...
-    label: str          # "Ollama (local)", "Groq", ...
-    available: bool     # True if the provider can be queried right now
-    reason: str = ""    # why unavailable (e.g. "GROQ_API_KEY not set")
-    base_url: str = ""  # human-readable endpoint
+    name: str             # "ollama", "groq", "openai", ...
+    label: str            # "Ollama (local)", "Groq", ...
+    available: bool       # True if the provider can be queried right now
+    reason: str = ""      # why unavailable (e.g. "GROQ_API_KEY not set")
+    base_url: str = ""    # human-readable endpoint
     is_local: bool = False
+    api_key_env: str = "" # name of the env var that controls this provider
+    key_set: bool = False # True if api_key_env was set when status was checked
 
 
 @dataclass
@@ -130,6 +132,8 @@ def _provider_info_unavailable(cfg: _OpenAICompatConfig) -> ProviderInfo:
         reason=f"{cfg.api_key_env} not set",
         base_url=cfg.base_url,
         is_local=False,
+        api_key_env=cfg.api_key_env,
+        key_set=False,
     )
 
 
@@ -458,6 +462,8 @@ async def list_models_router(
                 reason=str(res)[:200],
                 base_url=cfg.base_url,
                 is_local=False,
+                api_key_env=cfg.api_key_env,
+                key_set=True,  # we only attempted the call because the key was set
             ))
         else:
             providers.append(ProviderInfo(
@@ -466,6 +472,8 @@ async def list_models_router(
                 available=True,
                 base_url=cfg.base_url,
                 is_local=False,
+                api_key_env=cfg.api_key_env,
+                key_set=True,
             ))
             merged.extend(res)
 

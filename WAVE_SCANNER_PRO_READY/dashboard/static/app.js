@@ -426,10 +426,24 @@
       const title = p.available ? `${p.label} · ${p.base_url}` : `${p.label} · ${p.reason}`;
       return `<span class="text-[10px] px-1.5 py-0.5 rounded ${cls}" style="background:${badge.color}1a;color:${badge.color}" title="${escapeHtml(title)}">${badge.icon} ${escapeHtml(badge.label)}</span>`;
     }).join("");
-    const missing = state.providers.filter((p) => !p.available && !p.is_local);
-    const hint = missing.length
-      ? `<div class="text-[10px] text-slate-500 mt-1">tip: set <code>${missing.map((p) => p.reason.split(" ")[0]).join("</code> / <code>")}</code> в окружение → дашборд подцепит облачные модели</div>`
-      : "";
+    // Two distinct UI hints — don't tell the user to "set GROQ" when their
+    // key is already set but Groq just returned 401.
+    const notConfigured = state.providers.filter(
+      (p) => !p.available && !p.is_local && !p.key_set && p.api_key_env
+    );
+    const failing = state.providers.filter(
+      (p) => !p.available && !p.is_local && p.key_set
+    );
+    let hint = "";
+    if (notConfigured.length) {
+      const envs = notConfigured.map((p) => p.api_key_env).join("</code> / <code>");
+      hint += `<div class="text-[10px] text-slate-500 mt-1">tip: set <code>${envs}</code> в окружение → дашборд подцепит облачные модели</div>`;
+    }
+    if (failing.length) {
+      hint += failing.map((p) =>
+        `<div class="text-[10px] text-rose-300 mt-1" title="${escapeHtml(p.reason)}">${escapeHtml(p.label)}: ${escapeHtml(p.reason)}</div>`
+      ).join("");
+    }
     return `<div class="px-1 pb-1 mb-1 border-b border-white/5"><div class="flex flex-wrap gap-1">${chips}</div>${hint}</div>`;
   }
   function renderModelList() {
