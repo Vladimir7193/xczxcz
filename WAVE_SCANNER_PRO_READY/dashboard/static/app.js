@@ -802,20 +802,25 @@
       const adds = rows.filter((r) => r.kind === "+").length;
       const dels = rows.filter((r) => r.kind === "-").length;
       summary = `<span class="text-emerald-300">+${adds}</span> · <span class="text-rose-300">-${dels}</span>`;
-      // Skip rendering huge unchanged-only spans: collapse runs of >6 unchanged
-      // lines down to a "… N unchanged …" marker.
+      // Skip rendering huge unchanged-only spans: keep up to 3 leading
+      // context lines, then collapse the rest into a "… N unchanged …"
+      // marker so we never silently drop lines.
       const compact = [];
       let run = 0;
+      const flushRun = () => {
+        if (run > 3) compact.push({ kind: "…", line: `… ${run - 3} unchanged …` });
+        run = 0;
+      };
       for (const r of rows) {
         if (r.kind === " ") {
           run++;
           if (run <= 3) compact.push(r);
         } else {
-          if (run > 6) compact.push({ kind: "…", line: `… ${run - 3} unchanged …` });
-          run = 0;
+          flushRun();
           compact.push(r);
         }
       }
+      flushRun();
       diffRows = compact.map((r) => {
         const cls = r.kind === "+" ? "diff-add" : r.kind === "-" ? "diff-del" : r.kind === "…" ? "diff-skip" : "diff-eq";
         return `<div class="diff-row ${cls}"><span class="diff-mark">${r.kind}</span><span class="diff-line">${escapeHtml(r.line) || "&nbsp;"}</span></div>`;
