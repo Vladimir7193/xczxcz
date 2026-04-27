@@ -111,6 +111,34 @@ python server.py --help
 Environment variable equivalents: `DASHBOARD_HOST`, `DASHBOARD_PORT`,
 `DASHBOARD_WORKSPACE`, `OLLAMA_BASE_URL`, `DASHBOARD_LOG_LEVEL`.
 
+## Cloud LLM providers (no models on disk)
+
+Beyond local Ollama, the dashboard speaks the OpenAI chat-completions
+protocol so any of these can answer prompts without you downloading a
+multi-gigabyte model. Set the relevant env var(s) before launching the
+dashboard — providers without a key are simply hidden.
+
+| Provider    | Env var              | Free tier? | Notes |
+| ----------- | -------------------- | ---------- | ----- |
+| Groq        | `GROQ_API_KEY`       | yes — 30 req/min | very fast (>500 tok/s) |
+| OpenAI      | `OPENAI_API_KEY`     | no         | gpt-4o, gpt-4o-mini |
+| OpenRouter  | `OPENROUTER_API_KEY` | partial    | routes to many backends |
+| DeepInfra   | `DEEPINFRA_API_KEY`  | no         | Llama, Qwen at low cost |
+| Together AI | `TOGETHER_API_KEY`   | no         | Llama, Mixtral, etc.  |
+
+Models from each provider show up in the picker prefixed with the
+provider name, e.g. `groq/llama-3.3-70b-versatile`. Pick one like any
+other model — the dashboard routes the request to the right backend.
+
+```bash
+export GROQ_API_KEY=gsk_...
+export OPENROUTER_API_KEY=sk-or-...
+python start_dashboard.py
+```
+
+Files never leave your disk. Only the prompt text (which includes any
+attached file contents) is sent to the chosen provider.
+
 ## API
 
 All endpoints return JSON unless noted.

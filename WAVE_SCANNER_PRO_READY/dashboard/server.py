@@ -49,8 +49,12 @@ from ollama_client import (
     DEFAULT_BASE_URL as OLLAMA_BASE_URL,
     ChatMessage,
     OllamaError,
-    chat_stream,
-    list_models,
+)
+from llm_providers import (
+    LLMError,
+    ProviderInfo,
+    chat_stream_router,
+    list_models_router,
 )
 
 DASHBOARD_DIR = Path(__file__).resolve().parent
@@ -599,14 +603,19 @@ async def api_conversations_delete(conv_id: str) -> Dict[str, Any]:
 @app.get("/api/ollama/status")
 async def api_ollama_status() -> Dict[str, Any]:
     try:
-        models = await list_models(STATE.ollama_base_url)
-        return {"ok": True, "base_url": STATE.ollama_base_url, "models": models}
-    except OllamaError as e:
+        models, providers = await list_models_router(ollama_base_url=STATE.ollama_base_url)
+        return {
+            "ok": True,
+            "base_url": STATE.ollama_base_url,
+            "models": models,
+            "providers": [p.__dict__ for p in providers],
+        }
+    except (OllamaError, LLMError) as e:
         return {
             "ok": False,
             "base_url": STATE.ollama_base_url,
             "error": str(e),
-            "hint": e.hint,
+            "hint": getattr(e, "hint", ""),
             "models": [],
         }
 
@@ -614,10 +623,14 @@ async def api_ollama_status() -> Dict[str, Any]:
 @app.get("/api/ollama/models")
 async def api_ollama_models() -> Dict[str, Any]:
     try:
-        models = await list_models(STATE.ollama_base_url)
-        return {"ok": True, "models": models}
-    except OllamaError as e:
-        raise HTTPException(status_code=503, detail={"error": str(e), "hint": e.hint})
+        models, providers = await list_models_router(ollama_base_url=STATE.ollama_base_url)
+        return {
+            "ok": True,
+            "models": models,
+            "providers": [p.__dict__ for p in providers],
+        }
+    except (OllamaError, LLMError) as e:
+        raise HTTPException(status_code=503, detail={"error": str(e), "hint": getattr(e, "hint", "")})
 
 
 def _sse(event: Dict[str, Any]) -> bytes:
@@ -657,8 +670,8 @@ async def _stream_one_model(
     yield _sse({"type": "start", "model": model})
     accum: List[str] = []
     try:
-        async for chunk in chat_stream(
-            model, messages, base_url=STATE.ollama_base_url, options=options
+        async for chunk in chat_stream_router(
+            model, messages, ollama_base_url=STATE.ollama_base_url, options=options
         ):
             if chunk["delta"]:
                 accum.append(chunk["delta"])
@@ -670,9 +683,10 @@ async def _stream_one_model(
                     "model": model,
                     "eval_count": raw.get("eval_count"),
                     "total_duration": raw.get("total_duration"),
+                    "provider": raw.get("provider"),
                 })
-    except OllamaError as e:
-        yield _sse({"type": "error", "model": model, "error": str(e), "hint": e.hint})
+    except (OllamaError, LLMError) as e:
+        yield _sse({"type": "error", "model": model, "error": str(e), "hint": getattr(e, "hint", "")})
     except Exception as e:
         logger.exception("chat stream failed for %s", model)
         yield _sse({"type": "error", "model": model, "error": str(e)})
