@@ -15,6 +15,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(__file__))
 import config as cfg
 from backtest_cache import load_or_fetch_ohlcv, describe_cache
+from backtest_public_fetch import fetch_ohlcv_from_public
 from wave_analyzer import is_ranging, analyze_wave_structure, check_correction_complete
 from impulse_detector import detect_first_impulse, calculate_entry
 from signal_engine import WaveSignalEngine, score_to_label, volume_confirming
@@ -530,7 +531,19 @@ def _save_results_csv(results: List[TradeResult], path: str) -> None:
 def main() -> None:
     os.makedirs("logs", exist_ok=True)
     n_windows = max(1, int(cfg.BACKTEST_WALK_FORWARD_WINDOWS))
-    exchange = get_exchange()
+
+    # Data source selection. ``public`` pulls raw tick CSVs from
+    # public.bybit.com and aggregates them locally to OHLCV — fully
+    # deterministic (static files) and not geoblocked by CloudFront.
+    # ``rest`` uses the ccxt/Bybit REST API (live signal_engine path,
+    # the legacy default). ``auto`` prefers public when the PUBLIC base
+    # is reachable, falling back to REST otherwise.
+    data_source = os.environ.get("BACKTEST_DATA_SOURCE", "public").lower()
+    if data_source not in {"public", "rest"}:
+        logger.warning("Unknown BACKTEST_DATA_SOURCE=%s; falling back to 'public'", data_source)
+        data_source = "public"
+
+    exchange = get_exchange() if data_source == "rest" else None
 
     # Cache setup — paths resolved relative to this file so running from
     # any cwd still lands the snapshots in WAVE_SCANNER_PRO_READY/cache/.
@@ -539,8 +552,8 @@ def main() -> None:
     refresh_cache = cfg.BACKTEST_REFRESH_CACHE
 
     logger.info(
-        "Starting backtest: %d symbols, %d days back, walk-forward windows=%d",
-        len(BACKTEST_SYMBOLS), DAYS_BACK, n_windows,
+        "Starting backtest: %d symbols, %d days back, walk-forward windows=%d, data_source=%s",
+        len(BACKTEST_SYMBOLS), DAYS_BACK, n_windows, data_source,
     )
     logger.info(
         "Cache: use=%s refresh=%s dir=%s",
@@ -551,6 +564,8 @@ def main() -> None:
             logger.info("  %s", line)
 
     def _fetch(sym: str, tf: str, d: int) -> Optional[pd.DataFrame]:
+        if data_source == "public":
+            return fetch_ohlcv_from_public(sym, tf, d, cache_dir)
         return fetch_full_history(sym, tf, d, exchange)
 
     # Pre-fetch BTC 1h once for the LONG-only BTC-falling filter (mirror of
